@@ -1,0 +1,97 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Industrial IoT platforms for OptiProductio v3</title>
+<style>
+@page{size:A4;margin:0}
+*{box-sizing:border-box}
+body{margin:0;font-family:"DejaVu Sans",Arial,sans-serif;font-size:10pt;line-height:1.45;color:#1a1a1a}
+#src{position:absolute;left:-9999px;width:180mm}
+.page{width:210mm;height:297mm;padding:14mm 15mm 10mm;display:flex;flex-direction:column;page-break-after:always;overflow:hidden;position:relative}
+.content{flex:0 0 auto}
+.gloss{margin-top:auto;border-top:1.5px solid #13315c;padding-top:4px;font-size:7.4pt;line-height:1.32;color:#333}
+.gloss .gt{font-weight:bold;color:#13315c;font-size:7.6pt;margin-bottom:2px;letter-spacing:.03em;text-transform:uppercase}
+.gloss p{margin:0 0 2px}
+.gloss b{color:#0b2545}.gloss i{color:#555}
+.foot{font-size:7pt;color:#888;text-align:center;padding-top:4px}
+h1{font-size:19pt;color:#0b2545;border-bottom:3px solid #13315c;padding-bottom:6px;margin:0 0 10px}
+h2{font-size:13.5pt;color:#13315c;margin:14px 0 6px;border-bottom:1px solid #ccd}
+h3{font-size:11.5pt;color:#13315c;margin:10px 0 4px}
+p{margin:0 0 7px} ul,ol{margin:0 0 7px;padding-left:20px} li{margin-bottom:2px}
+table{border-collapse:collapse;width:100%;font-size:8.6pt;margin:4px 0 8px}
+th{background:#13315c;color:#fff;text-align:left;padding:4px}
+td{border:1px solid #ccd;padding:4px;vertical-align:top}
+tr:nth-child(even) td{background:#f3f5fa}
+code{font-size:8.5pt;background:#f0f0f0;padding:0 3px}
+hr{border:0;border-top:1px solid #ccd;margin:8px 0}
+a{color:#13315c}
+</style></head><body><div id="src">BODY</div><div id="out"></div>
+<script>
+const G=GLOSS;
+G.forEach(e=>e.res=e.alts.map(([s,f])=>new RegExp(s,f)));
+const src=document.getElementById('src'),out=document.getElementById('out');
+let blocks=[...src.children];
+let noGloss=false;
+blocks.forEach(b=>{if(b.tagName==='H2'&&/^(Appendix|References)/.test(b.textContent))noGloss=true;b.dataset.ng=noGloss?1:0;});
+function termsFor(content){
+  const txt=[...content.children].filter(c=>c.dataset.ng!=='1').map(c=>c.textContent).join('\n');
+  if(!txt.trim())return[];
+  const hasOEE=/\bOEE\b/.test(txt);
+  const found=[];
+  G.forEach(e=>{if(e.needOEE&&!hasOEE)return;let pos=Infinity;e.res.forEach(r=>{const m=txt.search(r);if(m>=0&&m<pos)pos=m});if(pos<Infinity)found.push([pos,e])});
+  return found.sort((a,b)=>a[0]-b[0]).map(x=>x[1]);
+}
+function strip(s){return s.replace(/\*\*/g,'').replace(/</g,'&lt;')}
+function renderGloss(pg){
+  const t=termsFor(pg.c);pg.g.innerHTML='';pg.g.style.display=t.length?'':'none';
+  if(!t.length)return;
+  pg.g.innerHTML='<div class="gt">Terms on this page</div>'+t.map(e=>`<p><b>${strip(e.term)}</b>${e.extra?' '+strip(e.extra):''}: ${strip(e.eli5)} <i>Like: ${strip(e.analogy)}</i></p>`).join('');
+}
+let pages=[];
+function newPage(){const p=document.createElement('div');p.className='page';const c=document.createElement('div');c.className='content';const g=document.createElement('div');g.className='gloss';const f=document.createElement('div');f.className='foot';f.textContent='page';p.append(c,g,f);out.append(p);const pg={p,c,g,f};pages.push(pg);return pg}
+const fits=pg=>{renderGloss(pg);return pg.p.scrollHeight<=pg.p.clientHeight+1};
+let pg=newPage();
+const queue=[...blocks];
+while(queue.length){
+  const b=queue.shift();
+  pg.c.append(b);
+  if(fits(pg))continue;
+  // try splitting tables / lists
+  if(b.tagName==='TABLE'||b.tagName==='UL'||b.tagName==='OL'){
+    const isT=b.tagName==='TABLE';
+    const items=isT?[...b.tBodies[0].rows]:[...b.children];
+    const part=b.cloneNode(false);
+    if(isT&&b.tHead)part.append(b.tHead.cloneNode(true));
+    const body=isT?document.createElement('tbody'):part; if(isT)part.append(body);
+    b.replaceWith(part);
+    let n=0;
+    for(const it of items){body.append(it);if(!fits(pg)){it.remove();break}n++}
+    const rest=items.slice(n);
+    if(n===0){part.remove();}
+    if(rest.length){
+      const nb=b.cloneNode(false);
+      if(isT){if(b.tHead)nb.append(b.tHead.cloneNode(true));const tb=document.createElement('tbody');rest.forEach(r=>tb.append(r));nb.append(tb)}
+      else{rest.forEach(r=>nb.append(r));if(b.tagName==='OL')nb.start=(parseInt(b.start||1)+n)}
+      nb.dataset.ng=b.dataset.ng;
+      if(n===0&&pg.c.children.length===0){pg.c.append(nb);continue}
+      queue.unshift(nb);
+    }
+    // move trailing heading
+    pg=moveHeading(pg);
+    renderGloss(pg);
+    pg=newPage();continue;
+  }
+  if(pg.c.children.length===1){continue} // alone and too big: leave it
+  b.remove();renderGloss(pg);
+  queue.unshift(b);
+  pg=moveHeading(pg);
+  pg=newPage();
+}
+function moveHeading(p){
+  const last=p.c.lastElementChild;
+  if(last&&/^H[1-3]$/.test(last.tagName)&&p.c.children.length>1){last.remove();queue.unshift(last);renderGloss(p)}
+  return p;
+}
+renderGloss(pg);
+pages=pages.filter(p=>{if(!p.c.children.length){p.p.remove();return false}return true});
+pages.forEach((p,i)=>{p.f.textContent=`OptiProductio industry report v3 · page ${i+1} of ${pages.length}`;renderGloss(p)});
+window.overflow=pages.map((p,i)=>[i+1,p.p.scrollHeight-p.p.clientHeight]).filter(x=>x[1]>1);
+src.remove();window.done=true;
+</script></body></html>
