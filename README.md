@@ -1,7 +1,8 @@
 # OptiProductio
 
-**Smart Production Workflow and Resource Optimization System**
-IDEA Lab EL project, IEM. Team Optifiners.
+**Arduino-Based Real-Time WIP Monitoring and Bottleneck Detection**
+
+IDEA Lab EL project, IEM, batch 2. EL topic: Smart Production Workflow and Resource Optimization System.
 
 OptiProductio is a small tabletop production line run by an Arduino UNO. IR sensors count parts leaving three stations, push buttons log a breakdown, an empty material bin or a rejected part, and an ultrasonic sensor watches how full the raw material bin is. The Arduino sends all of this over USB to a laptop, where a Python script saves it and a Streamlit dashboard shows the numbers a supervisor would care about: output, cycle time per station, downtime, scrap, and work in progress (WIP). If WIP goes over a cap we set, the line raises an alarm.
 
@@ -21,10 +22,10 @@ code/
   data/                             CSV files go here (not committed, see .gitignore)
 docs/
   EL_Workflow_and_Requirements.md   our EL rules, rubric and steps
-  phase1/                           Phase I deck (v1, v2) with preview PDFs, and the script that builds it
-  brief/                            teammate project brief (v1) and the 3D demo-day views
-  plans/                            growth roadmap (parked as future enhancement)
-  research/                         research reports and the notes behind them
+  phase1/                           Phase I decks with preview PDFs (latest: IDEA_LAB_Phase-I v3, team and method deck v7, Phase I deck v4) and build scripts
+  brief/                            teammate project brief (latest v3) and the 3D demo-day views
+  plans/                            growth roadmap (latest v2, parked as future enhancement)
+  research/                         research reports (latest: industry report v4, WIP research v2) and the notes behind them
 ```
 
 The code files still say "flowloop" in their names because that was the old project name. We kept the file names so the imports don't break.
