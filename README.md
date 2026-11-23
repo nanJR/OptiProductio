@@ -1,61 +1,51 @@
 # OptiProductio
 
-**Smart Production Workflow and Resource Optimization System**
-IDEA Lab EL project, IEM. Team Optifiners.
+**Arduino-Based Real-Time WIP Monitoring and Bottleneck Detection**
+IEM IDEA Lab EL project (topic: Smart Production Workflow and Resource Optimization System).
 
-OptiProductio is a small tabletop production line run by an Arduino UNO. IR sensors count parts leaving three stations, push buttons log a breakdown, an empty material bin or a rejected part, and an ultrasonic sensor watches how full the raw material bin is. The Arduino sends all of this over USB to a laptop, where a Python script saves it and a Streamlit dashboard shows the numbers a supervisor would care about: output, cycle time per station, downtime, scrap, and work in progress (WIP). If WIP goes over a cap we set, the line raises an alarm.
+OptiProductio is a tabletop production line with three hand-operated stations (S1, S2, S3). An Arduino UNO reads six IR sensors (one at the entry and one at the exit of each station), so it knows how many boxes are inside the line (WIP: work in progress) and how long each station holds each box (cycle time). A servo gate at the chute releases a new box only while WIP is below a limit (CONWIP: constant WIP). The UNO finds the bottleneck with Roser's active-period method and shows it on red/green LEDs. A NodeMCU ESP8266 sends every event over Wi-Fi as MQTT messages (ISA-95 style topics) to a Mosquitto broker on a laptop, where a Python program stores them in an SQLite historian and serves a live dashboard with ISO 22400 KPI names, a timeline, a downtime Pareto and a run report for comparing WIP limits.
 
-The dashboard can also run on a sample of the public Bosch Production Line dataset from Kaggle, so we can test it on real factory data and not only on our own model.
+This is a student prototype.
 
-This is a student prototype, not a finished product.
+## Start here
+| You want to | Read |
+|---|---|
+| Set up and run everything, step by step | [docs/phase2/SETUP_AND_RUN.md](docs/phase2/SETUP_AND_RUN.md) |
+| Wire the hardware | [docs/phase2/WIRING.md](docs/phase2/WIRING.md) and `docs/phase2/wiring_diagram.png` |
+| Test without hardware, then with it | [docs/phase2/TEST_CHECKLIST.md](docs/phase2/TEST_CHECKLIST.md) |
+| Understand it (ELI5 + viva wording) | [docs/phase2/HOW_IT_WORKS.md](docs/phase2/HOW_IT_WORKS.md) |
+
+Quick try with no hardware:
+```
+cd code/laptop
+pip install -r requirements.txt
+python run.py --source sim
+```
+Then open http://localhost:5000.
 
 ## Folder layout
-
 ```
 code/
-  flowloop_line/flowloop_line.ino   Arduino sketch (sensors, buttons, LCD, buzzer, WIP alarm)
-  serial_logger.py                  reads the Arduino over USB and writes CSVs into code/data/
-  flowloop_metrics.py               works out the metrics (cycle time, downtime, WIP, scrap...)
-  app.py                            Streamlit dashboard
-  requirements.txt                  Python packages
-  data/                             CSV files go here (not committed, see .gitignore)
+  firmware/
+    uno_line_controller/      the UNO sketch: sensors, WIP, CONWIP gate, bottleneck LEDs, buzzer, serial telegrams
+    uno_hardware_test/        flash first: tests each sensor, LED, the servo, buzzer and the gateway link
+    nodemcu_gateway/          NodeMCU ESP8266: serial -> MQTT gateway (edit config.h)
+  laptop/
+    run.py                    start here: --source sim | usb | mqtt
+    optiproductio/            protocol, simulator, sources, SQLite historian, analytics (KPIs, Roser), web server
+    static/                   dashboard (index.html, app.js, style.css) and run report
+    mosquitto/mosquitto.conf  broker config that accepts the NodeMCU
+    tests/                    automatic tests (python -m pytest -q)
+  legacy_phase1/              the Phase 1 sketch and Streamlit dashboard (kept for reference)
 docs/
-  EL_Workflow_and_Requirements.md   our EL rules, rubric and steps
-  phase1/                           Phase I deck (v1, v2) with preview PDFs, and the script that builds it
-  brief/                            teammate project brief (v1) and the 3D demo-day views
-  plans/                            growth roadmap (parked as future enhancement)
-  research/                         research reports and the notes behind them
+  phase2/                     setup guide, wiring, test checklist, how it works
+  phase1/ brief/ plans/ research/   earlier decks, brief, roadmap and research
 ```
 
-The code files still say "flowloop" in their names because that was the old project name. We kept the file names so the imports don't break.
-
-## How to run
-
-You need Python 3.10 or newer and the Arduino IDE.
-
-1. **Install the Python packages**
-   ```
-   cd code
-   pip install -r requirements.txt
-   ```
-2. **Upload the sketch.** Open `code/flowloop_line/flowloop_line.ino` in the Arduino IDE, install the `LiquidCrystal I2C` library from the Library Manager, pick the UNO board and port, and upload.
-3. **Start the logger** (leave it running in its own terminal, from inside `code/`):
-   ```
-   python serial_logger.py COM3
-   ```
-   On Mac or Linux the port is something like `/dev/ttyACM0`. Close the Arduino Serial Monitor first, or the port will be busy.
-4. **Start the dashboard** (second terminal, also inside `code/`):
-   ```
-   streamlit run app.py
-   ```
-   It opens in the browser. Pick "Live Arduino line" in the sidebar and move a part past a sensor.
-
-### Running on the Bosch data
-
-Download `train_date.csv` and `train_numeric.csv` from the Kaggle "Bosch Production Line Performance" competition and put them in `code/data/`. Then pick "Bosch sample" in the dashboard sidebar. The files are several GB, so they are kept out of git. The dashboard only reads the first 50,000 rows.
+## Hardware
+Arduino UNO (CH340), 6 × FC-51 IR sensors, SG90 servo with its own 5 V 2 A adapter and a 470 µF capacitor, NodeMCU ESP8266 (CP2102), 3 red + 3 green LEDs with 5 × 220 Ω and 1 × 1 kΩ, 1 kΩ / 2.2 kΩ divider, 5 V active buzzer, 400-point breadboard, jumpers. Laptop runs Mosquitto, Python and the browser.
 
 ## Notes
-
-- The build scripts in `docs/` (deck, brief and report PDFs) were written for our working folder and have some hard-coded paths, so check the paths before running them again.
+- Firmware compile-checked: UNO sketches with avr-gcc against the official Arduino AVR core; the gateway with arduino-cli and ESP8266 core 3.1.2 + PubSubClient 2.8. Python tested with the built-in simulator over the direct, USB-serial (virtual port) and Mosquitto MQTT paths.
+- Simulator numbers are simulated. Present them as such.
 - Docs are never overwritten. A new version is saved as v2, v3 and so on.
-- Third-party documents we read for research (vendor PDFs and similar) are not in this repo. Only our own notes and reports about them are.

@@ -1,0 +1,4 @@
+flask>=3.0
+paho-mqtt>=2.0
+pyserial>=3.5
+pytest>=8.0
