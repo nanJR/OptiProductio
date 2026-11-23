@@ -1,6 +1,6 @@
 # data files (Kaggle Bosch CSVs and live logs stay on our laptops)
-code/data/*
-!code/data/.gitkeep
+code/legacy_phase1/data/*
+!code/legacy_phase1/data/.gitkeep
 *.csv
 *.zip
 
@@ -16,3 +16,9 @@ Thumbs.db
 .vscode/
 .idea/
 ~$*
+
+# Phase 2 laptop data (historian database, settings)
+code/laptop/data/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
