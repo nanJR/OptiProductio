@@ -37,6 +37,13 @@ def make_app(engine):
         engine.set_limit(n)
         return jsonify(ok=True, limit=n)
 
+    @app.post("/api/buffer")
+    def buffer():
+        n = int((request.get_json(silent=True) or {}).get("buffer_s", 10))
+        n = max(1, min(3600, n))
+        engine.set_buffer(n)
+        return jsonify(ok=True, buffer_s=n)
+
     @app.post("/api/reset")
     def reset():
         engine.reset_line()

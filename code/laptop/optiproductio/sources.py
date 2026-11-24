@@ -140,12 +140,12 @@ class MqttSource(Source):
 class SimSource(Source):
     kind = "sim"
 
-    def __init__(self, scenario="normal", speed=1.0, limit=4):
+    def __init__(self, scenario="normal", speed=1.0, limit=0, buffer_s=10):
         super().__init__()
         from .simulator import SimLine
         self.speed = speed
         self.info = f"simulator, scenario '{scenario}', speed x{speed}"
-        self._args = (scenario, limit)
+        self._args = (scenario, limit, buffer_s)
         self._SimLine = SimLine
         self.sim = None
 

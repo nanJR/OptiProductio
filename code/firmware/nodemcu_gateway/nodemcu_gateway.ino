@@ -9,11 +9,12 @@
   Topics (ISA-95 style: enterprise/site/line/cell):
     rvce/idealab/line1/s1/event   {"seq":12,"ms":34567,"st":1,"ev":"IN","val":1}
     rvce/idealab/line1/line/event events for the whole line (GATE, HOLD, BN, LIMIT, BOOT...)
-    rvce/idealab/line1/status     {"seq":..,"ms":..,"wip":3,"limit":4,"gate":0,"occ":[1,0,1],"bn":1,"released":20,"done":17}
+    rvce/idealab/line1/status     {"seq":..,"ms":..,"wip":3,"limit":4,"gate":0,"occ":[1,0,1],"bn":1,"released":20,"done":17,"buf":10}
     rvce/idealab/line1/gateway/state  "online" / "offline" (retained, offline is the Last Will)
     rvce/idealab/line1/gateway/stats  {"rssi":-55,"lines":1234,"bad":0,"up_s":600}
   Commands it listens to:
     rvce/idealab/line1/cmd/wip_limit   payload "4"  -> sends "L,4" to the UNO
+    rvce/idealab/line1/cmd/buffer      payload "15" -> sends "B,15" (buffer time in s)
     rvce/idealab/line1/cmd/reset       any payload  -> sends "R"
     rvce/idealab/line1/cmd/ping        any payload  -> sends "P"
 
@@ -49,6 +50,10 @@ void onMqtt(char* topic, byte* payload, unsigned int length) {
     int limit = atoi(msg);
     uno.print("L,"); uno.println(limit);
     Serial.printf("cmd -> UNO: L,%d\n", limit);
+  } else if (t.endsWith("/cmd/buffer")) {
+    long b = atol(msg);
+    uno.print("B,"); uno.println(b);
+    Serial.printf("cmd -> UNO: B,%ld\n", b);
   } else if (t.endsWith("/cmd/reset")) {
     uno.println("R");
     Serial.println("cmd -> UNO: R");
@@ -91,8 +96,8 @@ void handleLine(char* line) {
   char copy[100];
   strncpy(copy, line, sizeof(copy));
   copy[sizeof(copy) - 1] = 0;
-  char* f[13];
-  uint8_t n = splitCsv(copy, f, 13);
+  char* f[14];
+  uint8_t n = splitCsv(copy, f, 14);
   char json[200];
   String topic;
 
@@ -106,10 +111,12 @@ void handleLine(char* line) {
       uno.printf("# gw ok wifi=%d mqtt=%d ip=%s\n", WiFi.status() == WL_CONNECTED,
                  mqtt.connected(), WiFi.localIP().toString().c_str());
     }
-  } else if (f[0][0] == 'S' && n == 12) {
+  } else if (f[0][0] == 'S' && (n == 12 || n == 13)) {
+    // n == 13: firmware v3 adds the buffer time (s) as the last field
     snprintf(json, sizeof(json),
-             "{\"seq\":%s,\"ms\":%s,\"wip\":%s,\"limit\":%s,\"gate\":%s,\"occ\":[%s,%s,%s],\"bn\":%s,\"released\":%s,\"done\":%s}",
-             f[1], f[2], f[3], f[4], f[5], f[6], f[7], f[8], f[9], f[10], f[11]);
+             "{\"seq\":%s,\"ms\":%s,\"wip\":%s,\"limit\":%s,\"gate\":%s,\"occ\":[%s,%s,%s],\"bn\":%s,\"released\":%s,\"done\":%s%s%s}",
+             f[1], f[2], f[3], f[4], f[5], f[6], f[7], f[8], f[9], f[10], f[11],
+             n == 13 ? ",\"buf\":" : "", n == 13 ? f[12] : "");
     topic = root + "/status";
   } else {
     linesBad++;

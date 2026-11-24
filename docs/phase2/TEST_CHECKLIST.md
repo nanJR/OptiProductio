@@ -8,13 +8,14 @@ Setup: `cd code\laptop`, `.venv\Scripts\activate`.
 
 | # | Test | How | Pass when | ✓ |
 |---|---|---|---|---|
-| 1.1 | Automatic tests | `python -m pytest -q` | `10 passed` | ☐ |
+| 1.1 | Automatic tests | `python -m pytest -q` | `14 passed` | ☐ |
 | 1.2 | Dashboard opens | `python run.py --source sim` | page loads, "Simulator · live", no red banner after 20 s | ☐ |
-| 1.3 | Bottleneck found | wait 2 min (or add `--speed 4`) | S2 tile orange; Bottleneck analysis bar S2 highest | ☐ |
+| 1.3 | Bottleneck found | wait 2 min (or add `--speed 4`) | S2 lights go green blinking → red steady once S2 is busy > 10 s; Bottleneck analysis bar S2 highest | ☐ |
+| 1.3b | Buffer time | set 30 s in "Buffer time and gate control", Apply | note says "UNO confirmed buffer time 30 s"; S2 now stays green blinking much longer before red | ☐ |
 | 1.4 | CONWIP gate holds | set L = 2, Apply | amber "WIP has reached the limit" banner appears; WIP tile never shows more than 2 | ☐ |
 | 1.5 | New run on limit change | after 1.4 | top-left label says "Run N: WIP limit 2" | ☐ |
-| 1.6 | No-limit run | press "No limit", Apply, wait 3 min | WIP average climbs above 4 | ☐ |
-| 1.7 | Run report | open Run report | one row per run; L=2 row has lower WIP and lead time than "No WIP limit" | ☐ |
+| 1.6 | No-limit run | press "Off (S1 gate only)", Apply, wait 3 min | WIP average climbs above 4 | ☐ |
+| 1.7 | Run report | open Run report | one row per run; L=2 row has lower WIP and lead time than "S1 gate, no WIP limit" | ☐ |
 | 1.8 | Little's law | Run report | "TH x LT" within about 15 % of "WIP avg" for runs longer than 3 min | ☐ |
 | 1.9 | Breakdown | `python run.py --source sim --scenario breakdown --speed 4` | after about 2 min of simulated time (30 s real time at speed 4): red "Line DOWN" banner, S2 card "Stalled", Pareto bar "Breakdown" | ☐ |
 | 1.10 | Starved line | `--scenario starve --speed 4` | Pareto shows "Starved" as the top reason | ☐ |
@@ -27,6 +28,7 @@ Setup: `cd code\laptop`, `.venv\Scripts\activate`.
 | 1.17 | CSV export | Run report > CSV | file opens in Excel | ☐ |
 | 1.18 | Phone view | phone on the same Wi-Fi opens `http://<laptop IP>:5000` | page fits the screen | ☐ |
 | 1.19 | Firmware compiles | Arduino IDE: Verify all three sketches | no errors | ☐ |
+| 1.20 | Firmware logic on the PC (optional) | `cd code/firmware/uno_line_controller/host_test` then `sh run.sh` (needs g++) | `0 failure(s)` | ☐ |
 
 ## Part 2. Hardware bring-up (with `uno_hardware_test.ino`)
 
@@ -46,14 +48,16 @@ Setup: `cd code\laptop`, `.venv\Scripts\activate`.
 
 | # | Test | Pass when | ✓ |
 |---|---|---|---|
-| 3.1 | Boot | lamp test flash + chirp; event log shows BOOT | ☐ |
+| 3.1 | Boot | lamp test flash + chirp; gate opens once; all stations green steady; event log shows BOOT and BUF | ☐ |
+| 3.1b | Gate sequence | box reaches S1 → gate closes; box leaves S1 → gate reopens about 1 s later; never 2 boxes on S1 | ☐ |
+| 3.1c | Buffer from Serial Monitor | type `B,5`: answer `BUF,5`; hold a box on S1: green blinks for 5 s, then red steady + one beep | ☐ |
 | 3.2 | One box end to end | IN/OUT events for S1, S2, S3 in order; Done = 1; each OUT shows a cycle time close to a stopwatch | ☐ |
 | 3.3 | 20 boxes | dashboard Done count = boxes counted by hand | ☐ |
 | 3.4 | WIP limit 3 | gate never releases a 4th box while 3 are in the line; double beep on hold | ☐ |
 | 3.5 | Limit from dashboard | Apply L = 2: UNO answers (LIMIT in the event log) within 1 s over MQTT | ☐ |
-| 3.6 | Limit survives restart | press the UNO reset button: BOOT event shows the same limit (saved in EEPROM) | ☐ |
-| 3.7 | Andon | the station you hold a box on longest turns red; idle stations blink green | ☐ |
-| 3.8 | Stall | hold a box on S2 for 25 s: S2 red fast-blinks, triple beep, STALL event, line DOWN | ☐ |
+| 3.6 | Settings survive restart | press the UNO reset button: BOOT shows the same limit and BUF the same buffer time (EEPROM) | ☐ |
+| 3.7 | Andon | empty stations green steady; a station with a box blinks green; red steady only after the buffer time | ☐ |
+| 3.8 | Stall | hold a box on S2 for 2 × buffer (20 s at 10 s): S2 stays red, triple beep, STALL event, line DOWN | ☐ |
 | 3.9 | Wi-Fi loss | turn the hotspot off for 20 s: line keeps working (gate, LEDs); dashboard warns; data resumes when hotspot returns | ☐ |
 | 3.10 | USB backup | `python run.py --source usb --port COMx` shows the same live data | ☐ |
 | 3.11 | Lost lines | top-right pill shows no "lines lost" during a 5 min run (or very few) | ☐ |
