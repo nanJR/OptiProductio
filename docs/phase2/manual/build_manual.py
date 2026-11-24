@@ -18,6 +18,7 @@ GLOSSARY = {
     "Lead time": "Time one box spends in the whole line, from S1 IN to S3 OUT.",
     "Throughput": "Finished boxes per minute.",
     "Andon": "A status light or sound that shows a station's state at a glance.",
+    "Buffer time": "User-set time (seconds) a station may stay busy before its LED turns red and it is flagged as the bottleneck. Set with B,n; saved in EEPROM.",
     "S1/S2/S3": "Station 1, Station 2, Station 3.",
     "OEE": "Overall equipment effectiveness = availability x performance x quality.",
     "KPI": "Key performance indicator: a number used to judge how well the line runs.",
@@ -173,7 +174,7 @@ page("", f"""
   <div class="twocol">
    <div>
     <h3>What you are building</h3>
-    <p>A tabletop production line. Boxes slide down a chute, a servo gate lets them in one at a time, and three people work at stations S1, S2 and S3. Six IR sensors watch every box enter and leave every station. The Arduino UNO keeps the WIP count, closes the gate when WIP hits the limit, finds the bottleneck and lights its red LED. A NodeMCU sends everything over Wi-Fi to the laptop, which stores it and shows a live dashboard.</p>
+    <p>A tabletop production line. Boxes slide down a chute, a servo gate lets them in one at a time, and three people work at stations S1, S2 and S3. Six IR sensors watch every box enter and leave every station. The Arduino UNO keeps the WIP count, opens the gate only when S1 is empty (and, with a WIP limit set, only while WIP is below it), and turns a station's LED red once it has been busy longer than the buffer time you set. A NodeMCU sends everything over Wi-Fi to the laptop, which stores it and shows a live dashboard.</p>
    </div>
    <div>
     <h3>How to use this manual</h3>
@@ -434,16 +435,16 @@ page("9. Wire 3: LEDs and buzzer", f"""
 </div><div>
 <h3>What the lights mean (andon)</h3>
 {table(["Light", "Meaning"], [
- ["green steady", "station working (a box is on it)"],
- ["green slow blink", "station idle, waiting for a box (starved)"],
- ["red steady", "this station is the bottleneck right now"],
- ["red fast blink", "box on the station for more than 20 s: suspected breakdown"],
- ["2 short beeps", "WIP hit the limit, gate holds the next box"],
- ["3 long beeps", "a station stalled (breakdown alarm)"],
+ ["green steady", "station empty (S1: the gate may open)"],
+ ["green blinking", "box on the station, WIP within the buffer time"],
+ ["red steady", "box on the station longer than the buffer time: bottleneck"],
+ ["1 short beep", "a station just turned red"],
+ ["2 short beeps", "WIP hit the limit, gate holds the next box (CONWIP mode only)"],
+ ["3 long beeps", "a station busy for 2 × buffer time: stalled (breakdown alarm)"],
 ], "tight")}
 {eli5("The resistor is a narrow pipe in front of a garden hose (the LED): without it the water (current) blasts out and bursts the hose. 220 Ω lets about 13 mA through, which is bright but safe.")}
 {stop("Test sketch, type <code>l</code>: the LEDs light one at a time in the order S1 green, S1 red, S2 green, S2 red, S3 green, S3 red. Type <code>b</code>: two beeps. If an LED stays dark, turn it round (legs swapped).")}
-</div></div>""", gl("Andon", "Bottleneck", "Starved", "Polarity"))
+</div></div>""", gl("Andon", "Buffer time", "Bottleneck", "Polarity"))
 
 # ---------------- 11. Wire 4 ----------------
 page("10. Wire 4: the servo and its own 5 V supply", f"""
@@ -550,11 +551,12 @@ page("14. Calibration: sensors, gate angles, chute", f"""
 <h3>C. Chute + gate together</h3>
 <p>Type <code>g</code> with boxes loaded: each opening must release the front box onto S1. (In the real program the gate closes as soon as S1 IN sees the box, so only one box goes.)</p>
 <h3>D. Timing settings (only if needed)</h3>
+<p><b>Buffer time</b> needs no re-upload: Serial Monitor (115200, Newline), type <code>B,15</code> for 15 s (<code>H</code> shows the settings), or use the dashboard. Saved in EEPROM.</p>
 {table(["Setting (top of uno_line_controller.ino)", "Default", "Change if"], [
  ["IR_HOLDOFF_MS", "400", "a box is counted twice: raise to 600"],
- ["GATE_REOPEN_MS", "1500", "boxes bump into each other at S1"],
- ["STALL_MS", "20000", "normal work at a station takes > 15 s"],
- ["DEFAULT_WIP_LIMIT", "4", "first-boot limit (later saved in EEPROM)"],
+ ["GATE_REOPEN_MS", "1000", "S1 empty this long before the gate reopens; raise if boxes bump at S1"],
+ ["DEFAULT_BUFFER_S", "10", "first-boot buffer time (later B,n, saved in EEPROM)"],
+ ["DEFAULT_WIP_LIMIT", "0", "0 = S1 gate only; n = CONWIP limit (later L,n)"],
 ], "tight small")}
 {eli5("Tuning a sensor is like adjusting a motion-sensor light in a corridor: sensitive enough to see someone walking past, but not so sensitive that it sees the wall opposite.")}
 {stop("All 6 sensors: 5/5 passes counted, 0 false counts with the lane empty. Gate holds 8 boxes and releases exactly the front one.")}
@@ -601,7 +603,7 @@ page("16. First power-on and the self-test", f"""
  "Mosquitto window started (section 15, B4).",
  "<code>.venv\\Scripts\\activate</code> then <code>python run.py --source mqtt</code>. Browser opens <code>http://localhost:5000</code>.",
  "Plug in the servo adapter, then the NodeMCU USB, then the UNO USB (UNO running <b>uno_line_controller</b>).",
- "UNO lamp test: all LEDs flash, buzzer chirps. Gate closes, then opens after 1.5 s.",
+ "UNO lamp test: all LEDs flash, buzzer chirps. Gate opens once; all stations green steady.",
  "Dashboard top right: <b>MQTT · live</b> and <b>NodeMCU online</b>.",
 ])}
 <h3>Backup path (no Wi-Fi)</h3>
@@ -613,11 +615,12 @@ page("16. First power-on and the self-test", f"""
  ["☐", "One box end to end", "event log: S1 IN, S1 OUT, S2 IN, S2 OUT, S3 IN, S3 OUT; Done = 1"],
  ["☐", "Cycle time", "OUT event cycle time close to a phone stopwatch (± 0.5 s)"],
  ["☐", "20 boxes", "Done count on dashboard = hand count"],
+ ["☐", "Gate sequence", "box reaches S1 → gate closes; S1 empty → gate reopens ~1 s later"],
+ ["☐", "Buffer time", "B,5: S1 green blinks 5 s with a box, then red steady + 1 beep"],
  ["☐", "WIP limit 3", "gate never lets a 4th box in; 2 beeps; amber banner"],
  ["☐", "Limit from dashboard", "Apply L = 2 → LIMIT in the event log within 1 s"],
- ["☐", "Limit kept", "UNO reset button → BOOT shows the same limit"],
- ["☐", "Andon", "station held longest turns red; idle stations blink green"],
- ["☐", "Stall", "box held on S2 for 25 s → fast red blink, 3 beeps, Line DOWN"],
+ ["☐", "Settings kept", "UNO reset button → BOOT/BUF show the same limit and buffer"],
+ ["☐", "Stall", "box held on S2 for 2 × buffer → stays red, 3 beeps, Line DOWN"],
  ["☐", "Wi-Fi loss", "hotspot off 20 s: line still runs; dashboard warns; resumes"],
  ["☐", "USB backup", "--source usb shows the same data"],
  ["☐", "Lost lines", "no (or very few) 'lines lost' in 5 min"],
@@ -633,7 +636,7 @@ page("17. Using the dashboard", f"""
 <ul class="tightlist">
 <li><b>Top tiles</b> (scoreboard, idea from Vorne XL): good parts vs target, OEE with A/E/QR, throughput, WIP now / limit and gate state, bottleneck now, lead time with the Little's law check.</li>
 <li><b>Line view</b>: each station's lights copy the real LEDs; numbers between stations = boxes waiting.</li>
-<li><b>CONWIP control</b>: pick a limit (No limit, 2, 3, 4, 6) and press <b>Apply limit</b>. A new run starts automatically. "Mark last part scrap" logs a reject. "Reset line counts" only after all boxes are back in the chute.</li>
+<li><b>Buffer time and gate control</b>: set the buffer time (5 to 60 s presets) and press <b>Apply buffer</b>. Pick a WIP limit (Off = S1 gate only, 2, 3, 4, 6) and press <b>Apply limit</b>. A new run starts automatically. "Mark last part scrap" logs a reject. "Reset line counts" only after all boxes are back in the chute.</li>
 </ul>
 </div><div>
 <ul class="tightlist">
@@ -661,9 +664,9 @@ page("18. Demo-day script", f"""
 <h3>The 8-minute run</h3>
 {table(["Time", "Do", "Say (precise words)"], [
  ["0:00", "Show the table and the architecture", "UNO is the line controller; the NodeMCU is an MQTT gateway; ISA-95 style topics; SQLite historian."],
- ["0:45", "Apply <b>No limit</b>; run 2 min", "WIP builds up in front of S2. S2 has the longest active periods, so it is the bottleneck (Roser's method)."],
+ ["0:45", "Limit <b>Off</b>, buffer 10 s; run 2 min", "Gate lets one box onto S1 at a time. Green blinks = work in progress; the S2 operator takes ~12 s per box, so S2 turns red after the 10 s buffer time (set per product). S2 has the longest active periods: bottleneck (Roser)."],
  ["3:00", "Apply <b>L = 3</b>; run 3 min", "Closed-loop CONWIP: the gate releases only while WIP < 3. The loop runs on the UNO, the laptop only sets the limit."],
- ["5:30", "Hold a box on S2 for 25 s", "Stall alarm; line DOWN; the Pareto attributes the loss to S2."],
+ ["5:30", "Hold a box on S2 for 2 × buffer (20 s)", "Stall alarm; line DOWN; the Pareto attributes the loss to S2."],
  ["6:30", "Open Run report", "Compare throughput, average WIP and lead time; check Little's law."],
  ["7:30", "Questions", "Only quote numbers from our own runs."],
 ], "tight small")}
@@ -707,15 +710,15 @@ page("20. Quick reference card (print and tape to the table)", f"""
 <p>Dashboard <b>http://localhost:5000</b> · Run report <b>/report</b></p>
 </div><div>
 {table(["Serial line (UNO → laptop)", "Meaning"], [
- ["E,seq,ms,st,ev,val", "one event (IN, OUT, GATE, HOLD, BN, STALL, LIMIT, BOOT, ERR)"],
- ["S,seq,ms,wip,limit,gate,o1,o2,o3,bn,in,done", "status, every second"],
- ["L,n / R / P", "commands: set limit, reset, ping"]], "tight small")}
+ ["E,seq,ms,st,ev,val", "one event (IN, OUT, GATE, HOLD, BN, STALL, LIMIT, BUF, BOOT, ERR)"],
+ ["S,seq,ms,wip,limit,gate,o1,o2,o3,bn,in,done,buf", "status, every second"],
+ ["B,s / L,n / H / R / P", "commands: buffer time, limit, help, reset, ping"]], "tight small")}
 {table(["MQTT topic", "Content"], [
  ["rvce/idealab/line1/s1..s3/event", "station events (JSON)"], ["rvce/idealab/line1/line/event", "gate, hold, bottleneck, limit"],
- ["rvce/idealab/line1/status", "status (retained)"], ["rvce/idealab/line1/cmd/wip_limit", "laptop → UNO"],
+ ["rvce/idealab/line1/status", "status (retained)"], ["rvce/idealab/line1/cmd/wip_limit, cmd/buffer", "laptop → UNO"],
  ["rvce/idealab/line1/gateway/state", "online / offline (Last Will)"]], "tight small")}
 {table(["Light / sound", "Meaning"], [
- ["green steady / slow blink", "working / idle"], ["red steady", "bottleneck now"], ["red fast blink + 3 beeps", "stalled > 20 s"], ["2 beeps", "WIP at limit, gate holding"]], "tight small")}
+ ["green steady / blinking", "empty / box within buffer"], ["red steady", "busy > buffer: bottleneck"], ["3 beeps", "stalled > 2 × buffer"], ["2 beeps", "WIP at limit, gate holding"]], "tight small")}
 </div></div>""", gl("MQTT", "Baud", "Last Will", "WIP", "Andon"))
 
 
@@ -777,7 +780,7 @@ def build():
         title = f"<h2>{pg['title']}</h2>" if pg["title"] else ""
         out.append(f"""<section class="page">{hdr}<div class="content">{title}{pg['body']}</div>
 <div class="gloss"><div class="gt">GLOSSARY FOR THIS PAGE</div>{gloss}</div>
-<div class="foot"><span>IEM IDEA Lab EL · Phase 2 · manual v1 · 23 Nov 2026</span><span>page {i} of {n}</span></div></section>""")
+<div class="foot"><span>IEM IDEA Lab EL · Phase 2 · manual v2 · 24 Nov 2026</span><span>page {i} of {n}</span></div></section>""")
     out.append("</body></html>")
     with open(os.path.join(HERE, "manual.html"), "w", encoding="utf-8") as f:
         f.write("\n".join(out))

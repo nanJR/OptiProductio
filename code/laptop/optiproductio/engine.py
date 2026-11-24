@@ -12,7 +12,7 @@ from .historian import Historian
 
 
 def run_label(limit: int) -> str:
-    return "No WIP limit" if limit == 0 else f"WIP limit {limit}"
+    return "S1 gate, no WIP limit" if limit == 0 else f"CONWIP, WIP limit {limit}"
 
 
 class Engine:
@@ -38,6 +38,7 @@ class Engine:
         self.expected_seq = None
         self.lost = 0
         self.pending_limit = None
+        self.pending_buffer = None
         self._cache = (0, None)
         self._run_cache = {}
 
@@ -68,6 +69,9 @@ class Engine:
                 if m["ev"] == "LIMIT":
                     self.pending_limit = None
                     self._new_run(m["ms"], m["val"])
+                elif m["ev"] == "BUF":
+                    self.pending_buffer = None
+                    self._cache = (0, None)
             else:
                 self.status = m
                 if m["ms"] - self.last_sample_ms >= 1000:
@@ -113,6 +117,13 @@ class Engine:
         self.hist.add_command(f"L,{n}")
         self.source.send(f"L,{n}")      # the run changes when the UNO confirms with a LIMIT event
 
+    def set_buffer(self, s: int):
+        """Buffer time in seconds: how long a station may stay busy before its LED turns red."""
+        s = max(1, min(3600, int(s)))
+        self.pending_buffer = s
+        self.hist.add_command(f"B,{s}")
+        self.source.send(f"B,{s}")      # the UNO saves it in EEPROM and answers with a BUF event
+
     def reset_line(self):
         self.hist.add_command("R")
         self.source.send("R")
@@ -138,7 +149,7 @@ class Engine:
             return True
 
     def update_cfg(self, new: dict):
-        for k in ("ideal_ct_s", "down_after_s", "stall_s", "timeline_s"):
+        for k in ("ideal_ct_s", "down_after_s", "timeline_s"):
             if k in new:
                 self.cfg[k] = float(new[k])
         if self.settings_path:
@@ -151,7 +162,10 @@ class Engine:
     def _compute(self, run, t1):
         sess = self.hist.session(run["session_id"])
         ev = self.hist.events(run["session_id"], t1)
-        return analytics.compute(ev, sess["init"], sess["start_ms"], run["start_ms"], t1, self.cfg)
+        cfg = dict(self.cfg)
+        if self.status and self.status.get("buf") is not None:
+            cfg["buffer_s"] = self.status["buf"]   # used only if no BUF event is in the history
+        return analytics.compute(ev, sess["init"], sess["start_ms"], run["start_ms"], t1, cfg)
 
     def snapshot(self):
         with self.lock:
@@ -161,6 +175,7 @@ class Engine:
             snap = {"title": "Arduino-Based Real-Time WIP Monitoring and Bottleneck Detection",
                     "project": "OptiProductio", "source": self.source.describe(),
                     "lost_lines": self.lost, "pending_limit": self.pending_limit,
+                    "pending_buffer": self.pending_buffer,
                     "status": self.status, "run": self.run, "kpi": None, "events": [], "cfg": self.cfg}
             if self.run and self.now_ms() is not None:
                 snap["kpi"] = self._compute(self.run, self.now_ms())

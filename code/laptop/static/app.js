@@ -10,6 +10,7 @@ const pct = (v) => (v === null || v === undefined) ? "-" : Math.round(v * 100) +
 
 let state = null;
 let limitDraft = null;
+let bufDraft = null;
 let settingsLoaded = false;
 
 // ---------- theme ----------
@@ -40,7 +41,7 @@ setInterval(poll, 1000);
 poll();
 
 // ---------- controls ----------
-function currentLimit() { return state && state.status ? state.status.limit : 4; }
+function currentLimit() { return state && state.status ? state.status.limit : 0; }
 function showLimit() { $("limVal").textContent = limitDraft === 0 ? "Off" : limitDraft; }
 $("limMinus").onclick = () => { limitDraft = Math.max(0, (limitDraft ?? currentLimit()) - 1); showLimit(); };
 $("limPlus").onclick = () => { limitDraft = Math.min(20, (limitDraft ?? currentLimit()) + 1); showLimit(); };
@@ -52,9 +53,25 @@ $("limApply").onclick = async () => {
 const presets = [["Off", 0], ["2", 2], ["3", 3], ["4", 4], ["6", 6]];
 for (const [label, n] of presets) {
   const b = document.createElement("button");
-  b.className = "btn small"; b.textContent = label === "Off" ? "No limit" : "L = " + label; b.dataset.n = n;
+  b.className = "btn small"; b.textContent = label === "Off" ? "Off (S1 gate only)" : "L = " + label; b.dataset.n = n;
   b.onclick = () => { limitDraft = n; showLimit(); };
   $("presets").appendChild(b);
+}
+function currentBuf() { return state && state.status && state.status.buf != null ? state.status.buf : 10; }
+function showBuf() { $("bufVal").textContent = bufDraft; }
+const bufStep = (v) => (v >= 60 ? 10 : 1);
+$("bufMinus").onclick = () => { const v = bufDraft ?? currentBuf(); bufDraft = Math.max(1, v - bufStep(v - 1)); showBuf(); };
+$("bufPlus").onclick = () => { const v = bufDraft ?? currentBuf(); bufDraft = Math.min(3600, v + bufStep(v)); showBuf(); };
+$("bufApply").onclick = async () => {
+  if (bufDraft === null) bufDraft = currentBuf();
+  await post("/api/buffer", { buffer_s: bufDraft });
+  $("bufNote").textContent = `Sent buffer time ${bufDraft} s. Waiting for the UNO to confirm...`;
+};
+for (const n of [5, 10, 15, 30, 60]) {
+  const b = document.createElement("button");
+  b.className = "btn small"; b.textContent = n + " s"; b.dataset.n = n;
+  b.onclick = () => { bufDraft = n; showBuf(); };
+  $("bufPresets").appendChild(b);
 }
 $("newRun").onclick = () => post("/api/run", {});
 $("scrap").onclick = () => post("/api/scrap", {});
@@ -106,6 +123,11 @@ function render(s) {
   }
   if (limitDraft === null && st) { limitDraft = st.limit; showLimit(); }
   document.querySelectorAll("#presets .btn").forEach((b) => b.classList.toggle("active", st && Number(b.dataset.n) === st.limit));
+  if (bufDraft === null && st && st.buf != null) { bufDraft = st.buf; showBuf(); }
+  document.querySelectorAll("#bufPresets .btn").forEach((b) => b.classList.toggle("active", st && Number(b.dataset.n) === st.buf));
+  if (st && s.pending_buffer === null && $("bufNote").textContent.startsWith("Sent")) {
+    $("bufNote").textContent = `UNO confirmed buffer time ${st.buf} s. Saved in its EEPROM.`;
+  }
   if (st && s.pending_limit === null && $("limNote").textContent.startsWith("Sent")) {
     $("limNote").textContent = `UNO confirmed WIP limit ${st.limit === 0 ? "off" : st.limit}. A new run started.`;
   }
@@ -136,17 +158,17 @@ function render(s) {
   $("tThSub").textContent = `${k.produced} out of S3 · ${k.released} released into S1`;
   $("tWip").innerHTML = `${st.wip}<small>/ ${st.limit === 0 ? "no limit" : st.limit}</small>`;
   const gateCls = st.gate ? "open" : (st.limit > 0 && st.wip >= st.limit ? "hold" : "closed");
-  const gateTxt = st.gate ? "OPEN" : (gateCls === "hold" ? "HELD BY LIMIT" : "CLOSED");
+  const gateTxt = st.gate ? "OPEN" : (gateCls === "hold" ? "HELD BY LIMIT" : (st.occ[0] > 0 ? "CLOSED: S1 BUSY" : "CLOSED"));
   for (const id of ["tGate", "fGate"]) { $(id).className = "chip " + gateCls; $(id).textContent = gateTxt; }
   $("tWipAvg").textContent = ` · avg ${fmt(k.wip_avg, 2)}`;
   const bnSt = k.bn_now ? k.stations[k.bn_now - 1] : null;
   $("tBn").textContent = k.bn_now ? "S" + k.bn_now : "none";
-  $("tBnSub").textContent = (bnSt ? `active ${fmt(bnSt.active_now_s, 0)} s without a break · ` : "") + (k.bn_overall ? `run: S${k.bn_overall}` : "");
+  $("tBnSub").textContent = (bnSt ? `busy ${fmt(bnSt.active_now_s, 1)} s > buffer ${fmt(k.cfg.buffer_s, 0)} s · ` : `none over the ${fmt(k.cfg.buffer_s, 0)} s buffer · `) + (k.bn_overall ? `run: S${k.bn_overall}` : "");
   $("tLt").innerHTML = `${fmt(k.lead_avg_s, 1)}<small>s</small>`;
   $("tLtSub").textContent = k.little_rhs == null ? "Little's law check -" : `TH x LT = ${fmt(k.little_rhs, 2)} vs WIP ${fmt(k.wip_avg, 2)}`;
 
   // line view
-  for (let i = 0; i < 3; i++) renderStation(i, k.stations[i], k.bn_now === i + 1);
+  for (let i = 0; i < 3; i++) renderStation(i, k.stations[i], k.bn_now === i + 1, k.cfg.buffer_s);
   $("buf1").textContent = k.transit[0]; $("buf2").textContent = k.transit[1];
   $("doneN").textContent = k.produced;
 
@@ -164,14 +186,17 @@ function fmtDur(sec) {
   return `${m}:${String(r).padStart(2, "0")}`;
 }
 
-function renderStation(i, x, isBn) {
+// Same rule as the UNO LEDs: green steady = empty, green blinking = WIP within buffer, red steady = over buffer
+function renderStation(i, x, isBn, bufS) {
   const box = $("st" + (i + 1));
-  const active = x.occ > 0;
-  box.className = "station" + (isBn ? " isbn" : "") + (x.stalled ? " stall" : "");
-  const g = x.stalled ? "" : (isBn ? "" : (active ? "on" : "on blink"));
-  const r = x.stalled ? "on fast" : (isBn ? "on" : "");
-  let stateTxt = active ? (x.stalled ? `<b>Stalled</b> ${fmt(x.active_now_s, 0)} s: suspected breakdown` : `<b>Working</b> for ${fmt(x.active_now_s, 0)} s`) : "Idle: waiting for a box";
-  if (isBn && !x.stalled) stateTxt = `<b>Bottleneck</b> · active ${fmt(x.active_now_s, 0)} s`;
+  const led = x.led || (x.occ > 0 ? "blink" : "green");
+  box.className = "station" + (led === "red" ? " isbn" : "") + (x.stalled ? " stall" : "");
+  const g = led === "green" ? "on" : (led === "blink" ? "on blink" : "");
+  const r = led === "red" ? "on" : "";
+  let stateTxt = "Empty: waiting for a box";
+  if (led === "blink") stateTxt = `<b>Working</b> ${fmt(x.active_now_s, 0)} of ${fmt(bufS, 0)} s buffer`;
+  if (led === "red") stateTxt = `<b>${isBn ? "Bottleneck" : "Over buffer"}</b> · busy ${fmt(x.active_now_s, 1)} s`;
+  if (x.stalled) stateTxt = `<b>Stalled</b> ${fmt(x.active_now_s, 0)} s (2 x buffer): suspected breakdown`;
   box.innerHTML = `
     <div class="head"><span class="name">S${i + 1}</span>
       <span class="lights"><span class="lamp g ${g}"></span><span class="lamp r ${r}"></span></span></div>
@@ -321,7 +346,8 @@ function renderTables(k) {
 const EV_TEXT = {
   IN: (e) => `box in (on station: ${e.val})`, OUT: (e) => e.val ? `box out, cycle ${(e.val / 1000).toFixed(1)} s` : "box out (cycle unknown)",
   GATE: (e) => e.val ? "gate opened" : "gate closed", HOLD: (e) => `gate held: WIP ${e.val} at limit`,
-  BN: (e) => e.val ? `bottleneck is now S${e.val}` : "no station active", LIMIT: (e) => `WIP limit set to ${e.val || "off"}`,
+  BN: (e) => e.val ? `bottleneck is now S${e.val} (over buffer time)` : "no station over the buffer time", LIMIT: (e) => `WIP limit set to ${e.val || "off (S1 gate only)"}`,
+  BUF: (e) => `buffer time set to ${e.val} s`,
   STALL: (e) => `stalled ${(e.val / 1000).toFixed(0)} s`, ERR: (e) => e.val === 1 ? "OUT without IN (check IN sensor)" : "too many boxes (sensor noise?)",
   BOOT: (e) => `UNO started, limit ${e.val}`, RESET: () => "counters reset", PONG: () => "UNO answered ping", SCRAP: () => "operator marked scrap",
 };

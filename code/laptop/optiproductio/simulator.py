@@ -3,7 +3,7 @@
 ELI5: this is a flight simulator for our line. The "physics" part moves imaginary
 boxes down the chute and through S1 -> S2 -> S3, with students (operators) taking
 a few seconds at each station. The "firmware" part copies the UNO sketch rule by
-rule (gate, WIP limit, bottleneck, stall) and prints the exact same text lines
+rule (gate sequence, buffer time, WIP limit, bottleneck, stall) and prints the exact same text lines
 the real UNO prints. The laptop software cannot tell the difference.
 
 Run it on its own:
@@ -33,11 +33,11 @@ SCENARIOS = {
 
 class SimLine:
     # copied from the UNO sketch
-    GATE_REOPEN_MS = 1500
-    STALL_MS = 20000
+    GATE_REOPEN_MS = 1000      # S1 must stay empty this long before the gate reopens
+    STALL_FACTOR = 2           # busy for 2 x buffer time = STALL
     STATUS_EVERY_MS = 1000
 
-    def __init__(self, emit, scenario="normal", limit=4, boxes=8, seed=1):
+    def __init__(self, emit, scenario="normal", limit=0, buffer_s=10, boxes=8, seed=1):
         self.emit_line = emit
         self.sc = SCENARIOS[scenario]
         self.rng = random.Random(seed)
@@ -53,17 +53,20 @@ class SimLine:
         self.recycle = deque()              # finished boxes walking back to the chute
         # firmware state
         self.limit = limit
+        self.buffer_s = max(1, min(3600, int(buffer_s)))
         self.released = 0
         self.done = 0
         self.fifo = [deque(), deque(), deque()]
         self.active_since = [0, 0, 0]
+        self.over = [False] * 3
         self.stall_sent = [False] * 3
         self.gate_open = False
-        self.gate_closed_at = 0
+        self.s1_empty_since = -self.GATE_REOPEN_MS   # S1 empty at boot: the gate opens at once
         self.hold_sent = False
         self.bn = 0
         self.last_status = 0
         self.ev(0, "BOOT", self.limit)
+        self.ev(0, "BUF", self.buffer_s)
 
     # ---------- firmware copy ----------
     def out(self, msg):
@@ -81,14 +84,13 @@ class SimLine:
         if open_ == self.gate_open:
             return
         self.gate_open = open_
-        if not open_:
-            self.gate_closed_at = self.ms
         self.ev(0, "GATE", 1 if open_ else 0)
 
     def on_in(self, i):
         self.fifo[i].append(self.ms)
         if len(self.fifo[i]) == 1:
             self.active_since[i] = self.ms
+            self.over[i] = False
             self.stall_sent[i] = False
         if i == 0:
             self.released += 1
@@ -101,6 +103,10 @@ class SimLine:
             ct = self.ms - self.fifo[i].popleft()
         else:
             self.ev(i + 1, "ERR", 1)
+        if not self.fifo[i]:
+            self.over[i] = False
+            if i == 0:
+                self.s1_empty_since = self.ms
         if i == 2:
             self.done += 1
         self.ev(i + 1, "OUT", ct)
@@ -109,6 +115,7 @@ class SimLine:
         w = self.wip()
         limit_ok = self.limit == 0 or w < self.limit
         s1_free = len(self.fifo[0]) == 0
+        s1_settled = s1_free and self.ms - self.s1_empty_since >= self.GATE_REOPEN_MS
         if not limit_ok:
             if not self.hold_sent:
                 self.ev(0, "HOLD", w)
@@ -118,27 +125,34 @@ class SimLine:
         if self.gate_open:
             if not limit_ok or not s1_free:
                 self.set_gate(False)
-        elif limit_ok and s1_free and self.ms - self.gate_closed_at >= self.GATE_REOPEN_MS:
+        elif limit_ok and s1_settled:
             self.set_gate(True)
-        # bottleneck + stall
+        # buffer time -> red LED, bottleneck among the red stations, stall
+        buf_ms = self.buffer_s * 1000
         bn, best = 0, -1
         for i in range(3):
             if self.fifo[i]:
                 d = self.ms - self.active_since[i]
-                if d > best:
+                if not self.over[i] and d > buf_ms:
+                    self.over[i] = True
+                if self.over[i] and d > best:
                     bn, best = i + 1, d
         if bn != self.bn:
             self.bn = bn
             self.ev(0, "BN", bn)
         for i in range(3):
-            if self.fifo[i] and not self.stall_sent[i] and self.ms - self.active_since[i] > self.STALL_MS:
+            if self.fifo[i] and not self.stall_sent[i] and self.ms - self.active_since[i] > buf_ms * self.STALL_FACTOR:
                 self.stall_sent[i] = True
                 self.ev(i + 1, "STALL", self.ms - self.active_since[i])
         if self.ms - self.last_status >= self.STATUS_EVERY_MS:
             self.last_status = self.ms
             self.out({"type": "S", "ms": self.ms, "wip": self.wip(), "limit": self.limit,
                       "gate": 1 if self.gate_open else 0, "occ": [len(f) for f in self.fifo],
-                      "bn": self.bn, "released": self.released, "done": self.done})
+                      "bn": self.bn, "released": self.released, "done": self.done, "buf": self.buffer_s})
+
+    def leds(self):
+        """What the 6 LEDs on the table show: 'green', 'blink' (green blinking) or 'red' per station."""
+        return ["green" if not self.fifo[i] else ("red" if self.over[i] else "blink") for i in range(3)]
 
     def command(self, cmd: str):
         with self.lock:
@@ -146,6 +160,9 @@ class SimLine:
             if c.startswith("L"):
                 self.limit = max(0, min(20, int(c[2:] or 0)))
                 self.ev(0, "LIMIT", self.limit)
+            elif c.startswith("B"):
+                self.buffer_s = max(1, min(3600, int(c[2:] or 0)))
+                self.ev(0, "BUF", self.buffer_s)
             elif c == "R":
                 # a reset with boxes on the table: put them all back in the chute
                 n = sum(1 for p in self.platform if p is not None) + sum(len(t) for t in self.transit) + len(self.recycle)
@@ -158,6 +175,8 @@ class SimLine:
                 self.released = self.done = 0
                 self.fifo = [deque(), deque(), deque()]
                 self.stall_sent = [False] * 3
+                self.over = [False] * 3
+                self.s1_empty_since = self.ms - self.GATE_REOPEN_MS
                 self.bn = 0
                 self.hold_sent = False
                 self.ev(0, "RESET", 0)
@@ -226,7 +245,8 @@ class SimLine:
 def main():
     ap = argparse.ArgumentParser(description="OptiProductio line simulator")
     ap.add_argument("--scenario", default="normal", choices=SCENARIOS)
-    ap.add_argument("--limit", type=int, default=4)
+    ap.add_argument("--limit", type=int, default=0, help="0 = gate follows S1 only; n > 0 = CONWIP limit")
+    ap.add_argument("--buffer", type=int, default=10, help="buffer time in seconds")
     ap.add_argument("--speed", type=float, default=1.0, help="2 = twice as fast as real time")
     ap.add_argument("--print", action="store_true", help="print the UNO lines")
     ap.add_argument("--mqtt", metavar="BROKER_IP", help="publish like the NodeMCU gateway")
@@ -258,6 +278,8 @@ def main():
             t = m.topic
             if t.endswith("/cmd/wip_limit"):
                 sim.command("L," + m.payload.decode())
+            elif t.endswith("/cmd/buffer"):
+                sim.command("B," + m.payload.decode())
             elif t.endswith("/cmd/reset"):
                 sim.command("R")
             elif t.endswith("/cmd/ping"):
@@ -269,7 +291,7 @@ def main():
         client.loop_start()
         print(f"Simulated gateway publishing to {a.mqtt}:{a.port} under {a.root}/ (Ctrl+C to stop)")
 
-    sim = SimLine(emit, a.scenario, a.limit)
+    sim = SimLine(emit, a.scenario, a.limit, a.buffer)
     dt = 50
     try:
         while True:
