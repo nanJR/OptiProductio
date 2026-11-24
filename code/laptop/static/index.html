@@ -81,16 +81,25 @@
         <div class="donebin">Done<span class="n num" id="doneN" style="display:block;font-size:22px;color:var(--text);font-weight:650">0</span></div>
       </div>
       <div class="legend">
-        <span><i style="background:var(--run)"></i>green: working</span>
-        <span><i style="background:var(--run);opacity:.45"></i>green blinking: idle, waiting for a box</span>
-        <span><i style="background:var(--bn)"></i>red: bottleneck now</span>
-        <span><i style="background:var(--down)"></i>red fast blink: stalled (suspected breakdown)</span>
+        <span><i style="background:var(--run)"></i>green steady: station empty</span>
+        <span><i style="background:var(--run);opacity:.45"></i>green blinking: box on station, WIP (work in progress) within buffer time</span>
+        <span><i style="background:var(--bn)"></i>red steady: box on station longer than the buffer time (bottleneck)</span>
       </div>
     </div>
 
     <div class="card">
-      <h2>CONWIP control</h2>
-      <p class="hint">CONWIP (constant work in progress): the servo gate releases a new box only while WIP is below the limit. The UNO runs this rule itself; this panel only changes the limit.</p>
+      <h2>Buffer time and gate control</h2>
+      <p class="hint">Buffer time: how long a station may stay busy before its LED turns red and it is called the bottleneck. Set it to suit the product (a longer job needs a longer buffer). The UNO saves it in EEPROM.</p>
+      <div class="limit-row">
+        <button class="btn stepper" id="bufMinus">-</button>
+        <div class="limit-val num" id="bufVal">10</div>
+        <button class="btn stepper" id="bufPlus">+</button>
+        <span class="unit">s</span>
+        <button class="btn primary" id="bufApply">Apply buffer</button>
+      </div>
+      <div class="presets" id="bufPresets"></div>
+      <div class="note" id="bufNote">Also settable in the Arduino Serial Monitor: type B,15 for 15 s.</div>
+      <p class="hint" style="margin-top:14px">Gate: opens when S1 is empty (S1 green steady), closes as soon as a box reaches S1. WIP limit "Off" = only this rule. A limit n &gt; 0 switches on CONWIP (constant work in progress): the gate also waits until the line holds fewer than n boxes.</p>
       <div class="limit-row">
         <button class="btn stepper" id="limMinus">-</button>
         <div class="limit-val num" id="limVal">4</div>
@@ -104,7 +113,7 @@
         <button class="btn" id="pingBtn">Ping UNO</button>
         <button class="btn danger" id="resetBtn">Reset line counts</button>
       </div>
-      <div class="note" id="limNote">Changing the limit starts a new run automatically, so the run report can compare limits (A/B test).</div>
+      <div class="note" id="limNote">Changing the WIP limit starts a new run automatically, so the run report can compare gate modes (A/B test).</div>
     </div>
   </section>
 
@@ -163,7 +172,6 @@
       <form class="settings" id="settings">
         <label>Planned cycle time PRI (s)<input name="ideal_ct_s" type="number" step="0.5" min="1"></label>
         <label>Line down after (s)<input name="down_after_s" type="number" step="1" min="2"></label>
-        <label>Stall alarm after (s)<input name="stall_s" type="number" step="1" min="5"></label>
         <label>Timeline window (s)<input name="timeline_s" type="number" step="60" min="60"></label>
         <button class="btn" type="submit">Save settings</button>
       </form>

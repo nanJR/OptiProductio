@@ -135,7 +135,10 @@ ELI5 for testing one block at a time: if you switch on a whole new house and the
 
 ## Part E. Run the real line
 
-1. Flash `code/firmware/uno_line_controller/uno_line_controller.ino` to the UNO. The LEDs flash once and the buzzer chirps (lamp test). The gate closes, then opens 1.5 s later.
+1. Flash `code/firmware/uno_line_controller/uno_line_controller.ino` to the UNO. The LEDs flash once and the buzzer chirps (lamp test). The gate opens once and all three stations show **green steady** (empty).
+   - First boot defaults: buffer time 10 s, WIP limit off (gate follows S1 only). Flashing v3 over v2 ignores the old saved limit once.
+   - **Set the buffer time:** open Serial Monitor (115200, "Newline") and type `B,15` for 15 s. The UNO answers `E,...,0,BUF,15` and keeps it in EEPROM. Type `H` to see the current settings. (Close the Serial Monitor before `run.py --source usb`; the dashboard card does the same job.)
+   - What you should see per box: box reaches S1 → gate closes, S1 green **blinks**; still on S1 after the buffer time → S1 **red steady** + one beep; box leaves S1 → S1 green steady, gate opens again after 1 s.
 2. Start Mosquitto (A4 step 4), then:
    ```
    python run.py --source mqtt
@@ -151,10 +154,11 @@ python run.py --source usb --port COM5
 Phones on the same hotspot can open the dashboard too: `http://<laptop IP>:5000`.
 
 ### Demo script for the evaluation (about 8 minutes)
-1. **Normal flow (2 min), no limit:** press "No limit", Apply. Show WIP piling up in front of S2 and S2 turning orange. Point at the Bottleneck analysis chart.
-2. **Turn on CONWIP (3 min):** set L = 3, Apply. The gate now holds boxes when WIP hits 3 (amber banner, double beep). Show WIP and lead time dropping on the tiles while output per minute stays about the same.
-3. **Breakdown (1 min):** keep a box on S2 for 25 s. S2's red LED blinks fast (stall), triple beep, line goes DOWN, the Pareto shows "Breakdown suspected at S2".
-4. **Run report (2 min):** open "Run report". Compare the "No limit" run with the "L = 3" run: throughput, average WIP, lead time, and Little's law (WIP ≈ TH × LT).
+1. **Normal flow (2 min), S1 gate, buffer 10 s:** WIP limit "Off". Show one box per opening and green blinking while a box is worked on. The S2 operator works a little slower than the others (about 12 s per box) so S2 turns red steady after 10 s. Point at the Bottleneck analysis chart.
+2. **Change the buffer (1 min):** set 15 s from the dashboard (or `B,15` in the Serial Monitor): S2 now stays green blinking. Explain: different products need different station times, so the alarm threshold is a setting, not a fixed number.
+3. **Turn on CONWIP (3 min):** set L = 3, Apply. The gate now also holds boxes when WIP hits 3 (amber banner, double beep). Show WIP and lead time dropping on the tiles while output per minute stays about the same.
+4. **Breakdown (1 min):** keep a box on S2 for 2 × buffer time (20 s at 10 s). S2 stays red, triple beep, STALL event, line goes DOWN, the Pareto shows "Breakdown suspected at S2".
+5. **Run report (2 min):** open "Run report". Compare the "S1 gate" run with the "L = 3" run: throughput, average WIP, lead time, and Little's law (WIP ≈ TH × LT).
 
 Only claim what your own runs show. If the hardware misbehaves, switch to `--source usb`, and as a last resort show the simulator and say clearly that it is the simulator.
 

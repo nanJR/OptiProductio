@@ -8,6 +8,10 @@ Main ideas (ELI5 versions are in docs/phase2/HOW_IT_WORKS.md):
     the bottleneck is the station whose current active period is the longest.
     When the longest active period passes from one station to another and the
     two periods overlap, that overlap is a "shifting bottleneck" time.
+  * Buffer time (set by the user on the UNO, B,<s>): the live bottleneck (red LED)
+    is only called once a station has been active longer than the buffer time.
+    The run-level Roser shares below do not use the buffer: they are the
+    textbook method, so they stay comparable with the literature.
   * ISO 22400-2 KPI names: PBT, APT, ADOT, PQ, GQ, SQ, PRI, A, E, QR, OEE.
   * Little's law (Hopp & Spearman): WIP = throughput x lead time.
 """
@@ -18,7 +22,7 @@ from collections import deque
 DEFAULT_CFG = {
     "ideal_ct_s": 6.0,       # PRI: planned run time per item (design cycle time of the line)
     "down_after_s": 18.0,    # no part out of S3 for this long = line is DOWN (Vorne-style)
-    "stall_s": 20.0,         # a station active this long = suspected breakdown (same as UNO)
+    "buffer_s": 10.0,        # fallback buffer time if no BUF event / status has arrived yet
     "timeline_s": 600,       # how much history the timeline chart shows
 }
 
@@ -156,11 +160,17 @@ def compute(events, init, session_start, t0, t1, cfg=None):
     c.update(cfg or {})
     ideal_ms = c["ideal_ct_s"] * 1000
     down_ms = c["down_after_s"] * 1000
-    stall_ms = c["stall_s"] * 1000
     t1 = max(t1, t0)
     pbt = t1 - t0
 
     events = [e for e in events if e["ms"] <= t1]
+    # buffer time in force at t1: the last BUF event from the UNO, else the fallback
+    buf_ev = [e["val"] for e in events if e["ev"] == "BUF"]
+    buffer_s = float(buf_ev[-1]) if buf_ev else float(c["buffer_s"])
+    c["buffer_s"] = buffer_s
+    c["stall_s"] = 2 * buffer_s          # same rule as the UNO: STALL after 2 x buffer
+    buffer_ms = buffer_s * 1000
+    stall_ms = c["stall_s"] * 1000
     periods, occ_now = _station_periods(events, init, session_start, t1)
 
     # --- counts, cycle times, lead times, WIP curve ---
@@ -266,6 +276,8 @@ def compute(events, init, session_start, t0, t1, cfg=None):
         busy = sum((cl[1] - cl[0]) for cl in (_clip(p[0], p[1], t0, t1) for p in periods[s]) if cl)
         full = [p[1] - p[0] for p in periods[s] if _clip(p[0], p[1], t0, t1)]
         ongoing = periods[s][-1] if periods[s] and periods[s][-1][2] else None
+        active_now_ms = (t1 - ongoing[0]) if ongoing else 0
+        over = bool(ongoing and active_now_ms > buffer_ms)
         ct = cycle[s]
         stations.append({
             "st": s + 1,
@@ -279,13 +291,16 @@ def compute(events, init, session_start, t0, t1, cfg=None):
             "ct_min_s": min(ct) if ct else None,
             "ct_max_s": max(ct) if ct else None,
             "count": len(ct),
-            "active_now_s": (t1 - ongoing[0]) / 1000 if ongoing else 0,
-            "stalled": bool(ongoing and t1 - ongoing[0] >= stall_ms),
+            "active_now_s": active_now_ms / 1000,
+            "over_buffer": over,
+            # the LEDs on the table: green steady = empty, blink = WIP inside buffer, red = over buffer
+            "led": "red" if over else ("blink" if ongoing else "green"),
+            "stalled": bool(ongoing and active_now_ms >= stall_ms),
             "sole_pct": 100 * rz["sole_ms"][s] / pbt if pbt > 0 else 0,
             "shift_pct": 100 * rz["shift_ms"][s] / pbt if pbt > 0 else 0,
         })
-    # momentary bottleneck now = longest ongoing active period
-    live = [st for st in stations if st["occ"] > 0]
+    # momentary bottleneck now = longest ongoing active period among stations over the buffer time
+    live = [st for st in stations if st["occ"] > 0 and st["over_buffer"]]
     bn_now = max(live, key=lambda st: st["active_now_s"])["st"] if live else 0
     score = [st["sole_pct"] + st["shift_pct"] for st in stations]
     bn_overall = (max(range(3), key=lambda i: score[i]) + 1) if any(score) else 0

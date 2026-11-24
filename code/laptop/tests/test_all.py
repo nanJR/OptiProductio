@@ -29,10 +29,10 @@ class FakeSource:
             self.sim.command(cmd)
 
 
-def make(scenario="normal", limit=4):
+def make(scenario="normal", limit=4, buffer_s=10):
     src = FakeSource()
     eng = Engine(src, ":memory:")
-    sim = SimLine(lambda line: eng.on_msg(protocol.parse_line(line)), scenario, limit)
+    sim = SimLine(lambda line: eng.on_msg(protocol.parse_line(line)), scenario, limit, buffer_s)
     src.sim = sim
     return eng, sim
 
@@ -43,7 +43,10 @@ def test_parse_event_and_status():
     assert e == {"type": "E", "seq": 12, "ms": 34567, "st": 2, "ev": "IN", "val": 1}
     s = protocol.parse_line("S,13,35000,3,4,0,1,0,1,1,20,17")
     assert s["wip"] == 3 and s["occ"] == [1, 0, 1] and s["done"] == 17
-    assert protocol.to_line(s) == "S,13,35000,3,4,0,1,0,1,1,20,17"
+    assert s["buf"] is None and protocol.to_line(s) == "S,13,35000,3,4,0,1,0,1,1,20,17"
+    s3 = protocol.parse_line("S,13,35000,3,0,0,1,0,1,1,20,17,15")   # firmware v3: buffer time last
+    assert s3["buf"] == 15 and protocol.to_line(s3) == "S,13,35000,3,0,0,1,0,1,1,20,17,15"
+    assert protocol.parse_line("E,1,2,0,BUF,15")["ev"] == "BUF"
 
 
 def test_garbage_is_ignored():
@@ -53,12 +56,14 @@ def test_garbage_is_ignored():
 
 def test_mqtt_round_trip():
     root = "rvce/idealab/line1"
-    for line in ["E,5,1000,3,OUT,4200", "E,6,1100,0,GATE,1", "S,7,2000,2,4,1,1,0,1,1,9,7"]:
+    for line in ["E,5,1000,3,OUT,4200", "E,6,1100,0,GATE,1", "S,7,2000,2,4,1,1,0,1,1,9,7",
+                 "S,7,2000,2,0,1,1,0,1,1,9,7,12", "E,8,2100,0,BUF,12"]:
         m = protocol.parse_line(line)
         topic, payload, _ = protocol.to_mqtt(m, root)
         assert protocol.from_mqtt(topic, payload, root) == m
     assert protocol.to_mqtt(protocol.parse_line("E,5,1,2,IN,1"), root)[0] == root + "/s2/event"
     assert protocol.command_to_mqtt("L,3", root) == (root + "/cmd/wip_limit", "3")
+    assert protocol.command_to_mqtt("B,15", root) == (root + "/cmd/buffer", "15")
 
 
 # ---------- Roser active-period method on a hand-made example ----------
@@ -145,3 +150,76 @@ def test_server_endpoints():
     assert eng.run["wip_limit"] == 3
     csv = c.get(f"/api/export/{eng.run['id']}.csv").data.decode()
     assert csv.startswith("run_id,")
+
+
+# ---------- new in v3: gate sequence, buffer time, LED rule ----------
+def test_gate_opens_at_start_and_one_box_at_s1():
+    """Limit 0: gate opens at boot, closes when a box reaches S1, reopens when S1 is empty."""
+    lines = []
+    sim = SimLine(lines.append, "normal", 0, 10)
+    sim.step(50)
+    assert sim.gate_open, "gate should open once right after boot"
+    for _ in range(4000):                                # 200 s
+        sim.step(50)
+        assert len(sim.fifo[0]) <= 1, "more than one box on S1"
+        if sim.fifo[0]:
+            assert not sim.gate_open, "gate open while a box is on S1"
+    ev = [protocol.parse_line(x) for x in lines]
+    ev = [e for e in ev if e and e["type"] == "E"]
+    # every S1 IN is followed by a gate close, and every reopen comes after an S1 OUT
+    seq = [(e["ev"], e["st"], e["val"]) for e in ev if e["ev"] in ("GATE",) or (e["ev"] in ("IN", "OUT") and e["st"] == 1)]
+    opens = [i for i, x in enumerate(seq) if x == ("GATE", 0, 1)]
+    for i in opens[1:]:
+        assert ("OUT", 1) == seq[i - 1][:2], "gate reopened before S1 was empty"
+    assert sum(1 for e in ev if e["ev"] == "HOLD") == 0, "no WIP-limit holds when the limit is off"
+
+
+def test_led_rule_follows_buffer_time():
+    sim = SimLine(lambda _l: None, "breakdown", 0, 5)   # S2 stuck from 90 s to 135 s
+    seen = {"green", "blink", "red"}
+    got = set()
+    t_box = None
+    for _ in range(3000):                                # 150 s
+        sim.step(50)
+        leds = sim.leds()
+        got.update(leds)
+        busy = sim.ms - sim.active_since[1] if sim.fifo[1] else None
+        if busy is not None:
+            if busy <= 5000:
+                assert leds[1] == "blink", "red before the buffer time ran out"
+            elif busy > 5100:
+                assert leds[1] == "red"
+                t_box = t_box or sim.ms
+        else:
+            assert leds[1] == "green"
+    assert got == seen and t_box is not None
+
+
+def test_buffer_command_round_trip_and_bottleneck_waits_for_buffer():
+    eng, sim = make("normal", 0, 30)
+    sim.run_for(60_000)
+    assert eng.snapshot()["status"]["buf"] == 30
+    eng.set_buffer(4)
+    sim.run_for(2_000)
+    snap = eng.snapshot()
+    assert snap["status"]["buf"] == 4 and snap["pending_buffer"] is None
+    assert snap["kpi"]["cfg"]["buffer_s"] == 4
+    # any live bottleneck the laptop names must be over the buffer time
+    for _ in range(60):
+        sim.run_for(1000)
+        eng._cache = (0, None)
+        k = eng.snapshot()["kpi"]
+        if k["bn_now"]:
+            assert k["stations"][k["bn_now"] - 1]["active_now_s"] > 4
+        for st in k["stations"]:
+            assert st["led"] == ("green" if st["occ"] == 0 else ("red" if st["active_now_s"] > 4 else "blink"))
+
+
+def test_server_buffer_endpoint():
+    eng, sim = make("normal", 0, 10)
+    sim.run_for(5_000)
+    c = make_app(eng).test_client()
+    assert c.post("/api/buffer", json={"buffer_s": 20}).get_json()["buffer_s"] == 20
+    assert eng.snapshot()["status"]["buf"] in (10, 20)
+    sim.run_for(1_500)
+    assert eng.status["buf"] == 20

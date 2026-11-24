@@ -3,7 +3,7 @@
 **Arduino-Based Real-Time WIP Monitoring and Bottleneck Detection**
 IEM IDEA Lab EL project (topic: Smart Production Workflow and Resource Optimization System).
 
-OptiProductio is a tabletop production line with three hand-operated stations (S1, S2, S3). An Arduino UNO reads six IR sensors (one at the entry and one at the exit of each station), so it knows how many boxes are inside the line (WIP: work in progress) and how long each station holds each box (cycle time). A servo gate at the chute releases a new box only while WIP is below a limit (CONWIP: constant WIP). The UNO finds the bottleneck with Roser's active-period method and shows it on red/green LEDs. A NodeMCU ESP8266 sends every event over Wi-Fi as MQTT messages (ISA-95 style topics) to a Mosquitto broker on a laptop, where a Python program stores them in an SQLite historian and serves a live dashboard with ISO 22400 KPI names, a timeline, a downtime Pareto and a run report for comparing WIP limits.
+OptiProductio is a tabletop production line with three hand-operated stations (S1, S2, S3). An Arduino UNO reads six IR sensors (one at the entry and one at the exit of each station), so it knows how many boxes are inside the line (WIP: work in progress) and how long each station holds each box (cycle time). A servo gate at the chute lets one box onto S1 at a time: it opens when S1 is empty and closes as soon as a box arrives. An optional WIP limit adds CONWIP (constant WIP: the gate also waits until fewer than n boxes are inside the line). Each station has a user-set buffer time (seconds, saved in EEPROM): its green LED is steady when empty, blinks while a box is worked on, and its red LED turns steady once the station has been busy longer than the buffer time. Among those red stations the UNO names the bottleneck with Roser's active-period method. A NodeMCU ESP8266 sends every event over Wi-Fi as MQTT messages (ISA-95 style topics) to a Mosquitto broker on a laptop, where a Python program stores them in an SQLite historian and serves a live dashboard with ISO 22400 KPI names, a timeline, a downtime Pareto and a run report for comparing WIP limits.
 
 This is a student prototype.
 
@@ -27,7 +27,8 @@ Then open http://localhost:5000.
 ```
 code/
   firmware/
-    uno_line_controller/      the UNO sketch: sensors, WIP, CONWIP gate, bottleneck LEDs, buzzer, serial telegrams
+    uno_line_controller/      the UNO sketch: sensors, WIP, S1/CONWIP gate, buffer time, bottleneck LEDs, buzzer, serial telegrams
+      host_test/              runs the real sketch logic on a PC with fake pins (g++), no board needed
     uno_hardware_test/        flash first: tests each sensor, LED, the servo, buzzer and the gateway link
     nodemcu_gateway/          NodeMCU ESP8266: serial -> MQTT gateway (edit config.h)
   laptop/

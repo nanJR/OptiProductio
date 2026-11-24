@@ -6,23 +6,36 @@
     1. Reads 6 FC-51 IR sensors: one at the entry (IN) and one at the exit (OUT)
        of each station S1, S2, S3.
     2. Keeps WIP (work in progress: boxes inside the line) = boxes in at S1 - boxes out at S3.
-    3. Runs the CONWIP gate (constant WIP): the SG90 servo at the chute only releases
-       a new box when WIP < WIP limit. The laptop can change the limit; the loop
-       itself runs here, so the line keeps working if Wi-Fi or the laptop drops.
-    4. Finds the momentary bottleneck (Roser active-period method): the station
-       that has been busy without a break for the longest time right now.
-    5. Drives one green + one red LED per station (andon lights) and a buzzer.
-    6. Sends every event as one text line to USB (laptop backup) AND to the
+    3. Runs the servo gate at the chute (one box at a time):
+         - at power-up the gate opens once and lets a box slide to S1,
+         - the moment that box reaches S1 (S1 IN sensor) the gate closes,
+         - when S1 is empty again (S1 OUT sensor) the gate opens for the next box.
+       Optional CONWIP mode (constant WIP): with a WIP limit n > 0 the gate ALSO
+       waits until WIP < n. Limit 0 (the default) = only the S1 rule above.
+       The rule runs here, so the line keeps working if Wi-Fi or the laptop drops.
+    4. Buffer time (user setting, seconds, saved in EEPROM): how long a station may
+       stay busy before we call it a bottleneck. Different products need different
+       times, so it is a setting, not a constant.
+    5. Finds the momentary bottleneck (Roser active-period method): among the
+       stations busy longer than the buffer time, the one busy the longest without a break.
+    6. Drives one green + one red LED per station (andon lights) and a buzzer:
+         green steady   = station empty
+         green blinking = box on the station, work in progress, still inside the buffer time
+         red steady     = box on the station for longer than the buffer time (bottleneck)
+    7. Sends every event as one text line to USB (laptop backup) AND to the
        NodeMCU ESP8266 Wi-Fi gateway (SoftwareSerial on A2/A3).
 
   Serial protocol (same lines on USB at 115200 baud and on the gateway link at 19200):
     E,<seq>,<ms>,<station>,<event>,<value>          one event
-    S,<seq>,<ms>,<wip>,<limit>,<gate>,<occ1>,<occ2>,<occ3>,<bn>,<released>,<done>
+    S,<seq>,<ms>,<wip>,<limit>,<gate>,<occ1>,<occ2>,<occ3>,<bn>,<released>,<done>,<buf_s>
                                                     status, once a second
     station 0 = whole line, 1..3 = S1..S3
-    events: BOOT, IN, OUT, GATE, HOLD, LIMIT, BN, STALL, ERR, RESET, PONG
-  Commands the UNO accepts (from USB or from the gateway), one per line:
-    L,<n>   set WIP limit to n (0 = no limit). Saved in EEPROM.
+    events: BOOT, IN, OUT, GATE, HOLD, LIMIT, BUF, BN, STALL, ERR, RESET, PONG
+  Commands the UNO accepts (from USB or from the gateway), one per line.
+  In the Arduino IDE Serial Monitor: 115200 baud, line ending "Newline", then type e.g. B,15
+    B,<s>   set the buffer time to s seconds (1..3600). Saved in EEPROM.
+    L,<n>   set WIP limit to n (0 = off: one box at S1 only). Saved in EEPROM.
+    H       print the current settings and this command list
     R       reset all counters (clear the boxes off the table first)
     P       ping, answered with E,...,PONG
 
@@ -45,16 +58,18 @@ const uint8_t GW_RX_PIN     = A2;          // <- NodeMCU D6 (3.3 V is read as HI
 const uint8_t GW_TX_PIN     = A3;          // -> 1k/2.2k divider -> NodeMCU D5
 
 // ---------------- Settings you can tune ----------------
-const uint8_t  DEFAULT_WIP_LIMIT = 4;      // used on first boot; later read from EEPROM
+const uint8_t  DEFAULT_WIP_LIMIT = 0;      // 0 = gate follows S1 only (open when S1 empty). First boot only.
+const uint16_t DEFAULT_BUFFER_S  = 10;     // buffer time in seconds. First boot only; then from EEPROM.
+const uint16_t MAX_BUFFER_S      = 3600;
 const uint8_t  IR_ACTIVE         = LOW;    // FC-51 output goes LOW when it sees a box
 const uint16_t IR_DEBOUNCE_MS    = 25;     // signal must be stable this long
 const uint16_t IR_HOLDOFF_MS     = 400;    // ignore a second trigger from the same box
 const uint8_t  GATE_CLOSED_DEG   = 10;     // servo angle that blocks the chute
 const uint8_t  GATE_OPEN_DEG     = 95;     // servo angle that lets one box slide
 const uint16_t SERVO_MOVE_MS     = 450;    // power the servo this long, then detach (no jitter)
-const uint16_t GATE_REOPEN_MS    = 1500;   // wait after closing before the next release
-const bool     RELEASE_ONLY_WHEN_S1_EMPTY = true;  // S1 platform holds one box
-const uint32_t STALL_MS          = 20000;  // a station busy this long = suspected breakdown
+const uint16_t GATE_REOPEN_MS    = 1000;   // S1 must stay empty this long before the gate reopens
+                                           // (lets the box leaving S1 clear the platform)
+const uint8_t  STALL_FACTOR      = 2;      // busy for 2 x buffer time = suspected breakdown (buzzer + STALL event)
 const uint16_t STATUS_EVERY_MS   = 1000;
 const long     USB_BAUD          = 115200;
 const long     GW_BAUD           = 19200;  // slow enough for SoftwareSerial on both ends
@@ -78,6 +93,7 @@ struct Station {
   uint8_t head;
   uint8_t count;                  // boxes on the station now (occupancy)
   unsigned long activeSince;      // start of the current active period
+  bool over;                      // busy longer than the buffer time (red LED)
   bool stallSent;
 };
 
@@ -88,11 +104,12 @@ uint16_t seq = 0;
 unsigned long released = 0;       // boxes that entered S1 (released into the line)
 unsigned long done = 0;           // boxes that left S3 (finished)
 uint8_t wipLimit = DEFAULT_WIP_LIMIT;  // 0 = no limit
+uint16_t bufferS = DEFAULT_BUFFER_S;   // buffer time in seconds
 
 bool gateOpen = false;
 bool servoAttached = false;
 unsigned long servoDetachAt = 0;
-unsigned long gateClosedAt = 0;
+unsigned long s1EmptySince = 0;   // when S1 last became empty
 bool holdSent = false;
 
 uint8_t bottleneck = 0;           // 0 = none, 1..3 = station
@@ -127,10 +144,10 @@ long wip() {
 }
 
 void sendStatus() {
-  char buf[80];
-  snprintf(buf, sizeof(buf), "S,%u,%lu,%ld,%u,%u,%u,%u,%u,%u,%lu,%lu",
+  char buf[90];
+  snprintf(buf, sizeof(buf), "S,%u,%lu,%ld,%u,%u,%u,%u,%u,%u,%lu,%lu,%u",
            seq++, millis(), wip(), wipLimit, gateOpen ? 1 : 0,
-           st[0].count, st[1].count, st[2].count, bottleneck, released, done);
+           st[0].count, st[1].count, st[2].count, bottleneck, released, done, bufferS);
   emit(buf);
 }
 
@@ -171,7 +188,6 @@ void setGate(bool open) {
   if (open == gateOpen) return;
   gateOpen = open;
   moveServo(open ? GATE_OPEN_DEG : GATE_CLOSED_DEG);
-  if (!open) gateClosedAt = millis();
   sendEvent(0, "GATE", open ? 1 : 0);
 }
 
@@ -182,11 +198,14 @@ void updateServoPower() {
   }
 }
 
-// CONWIP rule: release only while WIP < limit (and S1 is free)
+// Gate rule:
+//   open  when S1 has been empty for GATE_REOPEN_MS (and, in CONWIP mode, WIP < limit)
+//   close as soon as a box reaches S1 (done in onIn) or the WIP limit is reached
 void updateGate() {
   long w = wip();
   bool limitOk = (wipLimit == 0) || (w < (long)wipLimit);
-  bool s1Free = !RELEASE_ONLY_WHEN_S1_EMPTY || st[0].count == 0;
+  bool s1Free = st[0].count == 0;
+  bool s1Settled = s1Free && (millis() - s1EmptySince >= GATE_REOPEN_MS);
 
   if (!limitOk) {
     if (!holdSent) {                    // tell everyone once per hold
@@ -201,7 +220,7 @@ void updateGate() {
   if (gateOpen) {
     if (!limitOk || !s1Free) setGate(false);
   } else {
-    if (limitOk && s1Free && millis() - gateClosedAt >= GATE_REOPEN_MS) setGate(true);
+    if (limitOk && s1Settled) setGate(true);
   }
 }
 
@@ -217,6 +236,7 @@ void onIn(uint8_t i) {
   }
   if (s.count == 1) {                   // idle -> active: a new active period starts
     s.activeSince = now;
+    s.over = false;
     s.stallSent = false;
   }
   if (i == 0) {
@@ -237,27 +257,39 @@ void onOut(uint8_t i) {
     s.head = (s.head + 1) % FIFO_N;
     s.count--;
   }
+  if (s.count == 0) {
+    s.over = false;                     // empty again: back to green steady
+    if (i == 0) s1EmptySince = now;     // the gate may reopen after GATE_REOPEN_MS
+  }
   if (i == 2) done++;                   // a box left the line, count it even after ERR
   sendEvent(i + 1, "OUT", cycleMs);     // value = cycle time of that box in ms (0 = unknown)
 }
 
-// Roser momentary bottleneck: the active station with the longest current active period
+// A station is "over buffer" when it has been busy without a break (one active period)
+// for longer than the buffer time. Its red LED turns on.
+// Roser momentary bottleneck: of the over-buffer stations, the one with the longest
+// current active period. 0 = no station is over the buffer time.
 void updateBottleneck() {
   unsigned long now = millis();
+  unsigned long bufMs = (unsigned long)bufferS * 1000UL;
   uint8_t bn = 0;
   unsigned long best = 0;
   for (uint8_t i = 0; i < 3; i++) {
-    if (st[i].count > 0) {
-      unsigned long d = now - st[i].activeSince;
-      if (bn == 0 || d > best) { best = d; bn = i + 1; }
+    if (st[i].count == 0) continue;
+    unsigned long d = now - st[i].activeSince;
+    if (!st[i].over && d > bufMs) {
+      st[i].over = true;
+      beep(1, 120);                     // one short beep when a station turns red
     }
+    if (st[i].over && (bn == 0 || d > best)) { best = d; bn = i + 1; }
   }
   if (bn != bottleneck) {
     bottleneck = bn;
     sendEvent(0, "BN", bn);
   }
+  unsigned long stallMs = bufMs * STALL_FACTOR;
   for (uint8_t i = 0; i < 3; i++) {
-    if (st[i].count > 0 && !st[i].stallSent && now - st[i].activeSince > STALL_MS) {
+    if (st[i].count > 0 && !st[i].stallSent && now - st[i].activeSince > stallMs) {
       st[i].stallSent = true;
       sendEvent(i + 1, "STALL", (long)(now - st[i].activeSince));
       beep(3, 250);
@@ -291,61 +323,81 @@ void initIr(IrSensor &s, uint8_t pin) {
 }
 
 // ---------------- LEDs (andon) ----------------
-//   green on        = station working
-//   green blinking  = station idle (waiting for a box)
-//   red on          = this station is the bottleneck right now
-//   red fast blink  = stalled longer than STALL_MS (suspected breakdown)
+//   green steady    = station empty (and for S1: the gate may open)
+//   green blinking  = box on the station, work in progress, inside the buffer time
+//   red steady      = box on the station longer than the buffer time (bottleneck)
 void updateLeds() {
-  unsigned long now = millis();
-  bool slowBlink = (now / 500) % 2;
-  bool fastBlink = (now / 125) % 2;
+  bool blink = (millis() / 400) % 2;
   for (uint8_t i = 0; i < 3; i++) {
-    bool active = st[i].count > 0;
-    bool stalled = active && st[i].stallSent;
-    bool isBn = bottleneck == i + 1;
     bool g, r;
-    if (stalled)      { g = false; r = fastBlink; }
-    else if (isBn)    { g = false; r = true; }
-    else if (active)  { g = true;  r = false; }
-    else              { g = slowBlink; r = false; }
+    if (st[i].count == 0)  { g = true;  r = false; }
+    else if (st[i].over)   { g = false; r = true; }
+    else                   { g = blink; r = false; }
     digitalWrite(LED_GREEN_PIN[i], g ? HIGH : LOW);
     digitalWrite(LED_RED_PIN[i], r ? HIGH : LOW);
   }
 }
 
 // ---------------- Commands ----------------
-void saveLimit() {
-  EEPROM.update(0, 0xA5);               // marker: "a limit has been saved"
+// EEPROM layout: [0] marker 0xA6, [1] WIP limit, [2..3] buffer time (s).
+// The marker changed from v2 (0xA5), so an old saved limit is ignored once.
+const uint8_t EE_MARK = 0xA6;
+
+void saveSettings() {
+  EEPROM.update(0, EE_MARK);
   EEPROM.update(1, wipLimit);
+  EEPROM.update(2, bufferS & 0xFF);
+  EEPROM.update(3, bufferS >> 8);
 }
 
-void loadLimit() {
-  if (EEPROM.read(0) == 0xA5 && EEPROM.read(1) <= 20) wipLimit = EEPROM.read(1);
-  else wipLimit = DEFAULT_WIP_LIMIT;
+void loadSettings() {
+  wipLimit = DEFAULT_WIP_LIMIT;
+  bufferS = DEFAULT_BUFFER_S;
+  if (EEPROM.read(0) != EE_MARK) { saveSettings(); return; }
+  if (EEPROM.read(1) <= 20) wipLimit = EEPROM.read(1);
+  uint16_t b = EEPROM.read(2) | ((uint16_t)EEPROM.read(3) << 8);
+  if (b >= 1 && b <= MAX_BUFFER_S) bufferS = b;
+}
+
+void printHelp() {
+  char buf[64];
+  snprintf(buf, sizeof(buf), "# settings: buffer=%u s, WIP limit=%u (0=off)", bufferS, wipLimit);
+  emit(buf);
+  emit("# commands: B,<seconds> buffer | L,<n> WIP limit | H help | R reset | P ping");
 }
 
 void resetLine() {
   released = 0;
   done = 0;
   for (uint8_t i = 0; i < 3; i++) {
-    st[i].head = 0; st[i].count = 0; st[i].stallSent = false;
+    st[i].head = 0; st[i].count = 0; st[i].over = false; st[i].stallSent = false;
   }
   bottleneck = 0;
   holdSent = false;
+  s1EmptySince = millis() - GATE_REOPEN_MS;   // S1 is empty: the gate may open right away
   sendEvent(0, "RESET", 0);
 }
 
 void handleCommand(char* cmd) {
-  // accepts "L,4", "L 4", "R", "P" (upper or lower case)
+  // accepts "B,15", "B 15", "L,4", "L 4", "H", "R", "P" (upper or lower case)
   char c = cmd[0];
   if (c >= 'a' && c <= 'z') c -= 32;
-  if (c == 'L') {
-    int n = atoi(cmd + 2);
+  if (c == 'B') {
+    long n = atol(cmd + 1 + (cmd[1] == ',' || cmd[1] == ' ' ? 1 : 0));
+    if (n < 1) n = 1;
+    if (n > MAX_BUFFER_S) n = MAX_BUFFER_S;
+    bufferS = (uint16_t)n;
+    saveSettings();
+    sendEvent(0, "BUF", bufferS);
+  } else if (c == 'L') {
+    int n = atoi(cmd + 1 + (cmd[1] == ',' || cmd[1] == ' ' ? 1 : 0));
     if (n < 0) n = 0;
     if (n > 20) n = 20;
     wipLimit = (uint8_t)n;
-    saveLimit();
+    saveSettings();
     sendEvent(0, "LIMIT", wipLimit);
+  } else if (c == 'H' || c == '?') {
+    printHelp();
   } else if (c == 'R') {
     resetLine();
   } else if (c == 'P') {
@@ -375,15 +427,14 @@ void setup() {
     initIr(irOut[i], IR_OUT_PIN[i]);
     pinMode(LED_GREEN_PIN[i], OUTPUT);
     pinMode(LED_RED_PIN[i], OUTPUT);
-    st[i].head = 0; st[i].count = 0; st[i].stallSent = false;
+    st[i].head = 0; st[i].count = 0; st[i].over = false; st[i].stallSent = false;
   }
   pinMode(BUZZER_PIN, OUTPUT);
-  loadLimit();
+  loadSettings();
 
-  // start with the gate closed
+  // gate starts closed; updateGate() opens it once right after boot (S1 is empty)
   gateOpen = false;
   moveServo(GATE_CLOSED_DEG);
-  gateClosedAt = millis();
 
   // lamp test: all LEDs on for half a second
   for (uint8_t i = 0; i < 3; i++) { digitalWrite(LED_GREEN_PIN[i], HIGH); digitalWrite(LED_RED_PIN[i], HIGH); }
@@ -392,8 +443,11 @@ void setup() {
   digitalWrite(BUZZER_PIN, LOW);
   delay(350);
 
-  Serial.println(F("# OptiProductio UNO line controller v2.0"));
+  Serial.println(F("# OptiProductio UNO line controller v3.0"));
+  s1EmptySince = millis() - GATE_REOPEN_MS;
   sendEvent(0, "BOOT", wipLimit);
+  sendEvent(0, "BUF", bufferS);
+  printHelp();
 }
 
 void loop() {
