@@ -64,8 +64,10 @@ const uint16_t MAX_BUFFER_S      = 3600;
 const uint8_t  IR_ACTIVE         = LOW;    // FC-51 output goes LOW when it sees a box
 const uint16_t IR_DEBOUNCE_MS    = 25;     // signal must be stable this long
 const uint16_t IR_HOLDOFF_MS     = 400;    // ignore a second trigger from the same box
-const uint8_t  GATE_CLOSED_DEG   = 10;     // servo angle that blocks the chute
-const uint8_t  GATE_OPEN_DEG     = 95;     // servo angle that lets one box slide
+const uint8_t  GATE_CLOSED_DEG   = 95;     // servo angle that blocks the chute (arm hangs across the lane)
+// OPEN is a SMALLER angle than CLOSED so the arm swings to the RIGHT (looking down the lane).
+// Swing too small: lower GATE_OPEN_DEG (min 0). Swing too big: raise it toward GATE_CLOSED_DEG.
+const uint8_t  GATE_OPEN_DEG     = 10;     // servo angle that lets one box slide
 const uint16_t SERVO_MOVE_MS     = 450;    // power the servo this long, then detach (no jitter)
 const uint16_t GATE_REOPEN_MS    = 1000;   // S1 must stay empty this long before the gate reopens
                                            // (lets the box leaving S1 clear the platform)
