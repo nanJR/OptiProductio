@@ -42,6 +42,18 @@ Each idea has three parts: the plain-English picture, what the code actually doe
 - "Busy" is measured as the current active period (next section), so a station with a queue of boxes that never empties also turns red.
 **Viva wording:** "The buffer time is a configurable tolerance on the active-period length before a station is flagged; it is stored in EEPROM and set through the serial command interface or MQTT."
 
+## 3c. Breakdown lock (firmware v3.1)
+**Picture:** a factory "stop the line" cord. When one machine breaks, the whole line stops: nobody upstream feeds it more work, nobody downstream starts anything new, and nobody's stopwatch keeps running while they wait for the repair.
+**Code (`updateLock()` in the UNO sketch):** a station is **broken** once it has held a box for 2 × buffer time (`STALL`). Then:
+1. The UNO sends `LOCK,<mask>` (bit 0 = S1, bit 1 = S2, bit 2 = S3; e.g. `LOCK,2` = S2 broken).
+2. The sensors of every other station (upstream and downstream) are **ignored**. Only the broken station's own sensors still work.
+3. The gate stays closed, so no new box enters.
+4. The frozen stations' timers are **paused**, so a box waiting on S1 while S2 is broken does not turn red or get its own false breakdown.
+5. When the stuck box leaves the broken station (its OUT sensor), the UNO sends `LOCK,0`, shifts the frozen timers forward by the frozen time, and the line runs again.
+One exception: a box the gate had already let go just before the lock still lands on S1 and is counted (its clock starts paused at 0 s); otherwise WIP would be one short for the rest of the run.
+The laptop reads the `LOCK` events and pauses the same timers, so the dashboard and the LEDs agree. The banner shows "Line LOCKED" and frozen stations are drawn dashed.
+**Viva wording:** "On a suspected breakdown the controller latches a line-stop interlock: upstream and downstream inputs are inhibited, release is blocked, and the blocked/starved stations' active-period clocks are suspended until the faulted station clears."
+
 ## 4. Bottleneck by the active-period method (Roser)
 **Picture:** in a relay race, the runner who holds the baton the longest without handing it over is slowing the team.
 **Code:** a station is **active** while a box is on it (working, or finished but not yet taken away = blocked) and **idle** while empty (starved). At any instant the bottleneck is the station whose current active period is the longest. On the UNO (`updateBottleneck()`) and on the live dashboard tile only stations already over the buffer time can be named, so a box that has just arrived is never called a bottleneck. `analytics.roser()` on the laptop does the full run analysis with the textbook method (no buffer), so the percentages stay comparable with Roser's papers.
@@ -66,13 +78,17 @@ The Pareto chart sorts reasons by lost seconds with a cumulative % line (the 80/
 | PBT | Planned busy time | run end − run start |
 | ADOT | Actual unit down time | sum of DOWN intervals |
 | APT | Actual production time | PBT − ADOT |
-| PQ / SQ / GQ | Produced / scrap / good quantity | GQ = PQ − SQ |
+| PQ | Produced quantity | boxes out of S3 |
+| SQ | Scrap quantity | boxes marked scrap by the operator |
+| BDQ | Breakdown parts | boxes out of S3 that stayed on any one station longer than 2 × buffer time |
+| GQ | Good quantity | GQ = PQ − SQ − BDQ |
 | PRI | Planned run time per item | set in Settings (6 s default) |
 | A | Availability | APT / PBT |
 | E | Effectiveness (performance) | PRI × PQ / APT, capped at 100 % |
 | QR | Quality ratio | GQ / PQ |
 | OEE | OEE index (overall equipment effectiveness) | A × E × QR |
 | TR | Throughput rate | PQ / APT |
+**Good-part rule:** a box is good if it left every station before that station was declared broken (its cycle time at each station ≤ 2 × buffer time). A slow box that turned the LED red (over the buffer) is still good. The laptop follows each box through S1 → S2 → S3 in FIFO order to apply this.
 We cite ISO 22400-2 for the names and structure; the formulas are the standard textbook forms (we could not read the paywalled text word by word). Say exactly that if asked. TR uses APT where ISO uses order execution time.
 
 ## 7. Little's law
@@ -91,7 +107,8 @@ We cite ISO 22400-2 for the names and structure; the formulas are the standard t
 - **Scaling story:** a second line = another UNO + NodeMCU publishing under `rvce/idealab/line2/...`. No change to the broker; the laptop software would need a line selector.
 
 ## 9. Small design details examiners may ask about
-- **Debounce + hold-off:** a sensor must be stable for 25 ms and cannot fire again within 400 ms, so one box = one count.
+- **Debounce + hold-off + re-arm:** a sensor must be stable for 25 ms, cannot fire again within 400 ms, and must have seen nothing for 300 ms before it can count a new box, so a box wobbling under a sensor is one count.
+- **S1 one-box rule:** S1 can only hold one box (the gate closes on the first S1 IN). A second S1 IN before the gate has opened again is the same box re-triggering the sensor: it is ignored and logged as `ERR,3`. This stops WIP from being inflated.
 - **Servo detach:** the sketch powers the servo pulses for 450 ms after each move, then detaches. This stops jitter caused by SoftwareSerial interrupts and saves current. The gate arm stays put by gear friction.
 - **Separate servo supply + 470 µF:** prevents brown-out resets of the UNO.
 - **Voltage divider 1 k / 2.2 k:** 5 V → about 3.4 V for the ESP8266 input.

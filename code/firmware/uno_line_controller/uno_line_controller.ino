@@ -22,7 +22,14 @@
          green steady   = station empty
          green blinking = box on the station, work in progress, still inside the buffer time
          red steady     = box on the station for longer than the buffer time (bottleneck)
-    7. Sends every event as one text line to USB (laptop backup) AND to the
+    7. Breakdown lock: when a station has been busy for 2 x buffer time (STALL = suspected
+       breakdown), the whole line is frozen until that station's stuck box leaves.
+       Only the broken station's own sensors are read; the sensors of every other
+       station (upstream and downstream) are ignored, the gate stays closed, and the
+       timers of the frozen stations are paused (a box waiting on a frozen station is
+       not blamed for the breakdown). Event LOCK,<mask>: bit 0 = S1, bit 1 = S2,
+       bit 2 = S3 are the broken stations; LOCK,0 = line running again.
+    8. Sends every event as one text line to USB (laptop backup) AND to the
        NodeMCU ESP8266 Wi-Fi gateway (SoftwareSerial on A2/A3).
 
   Serial protocol (same lines on USB at 115200 baud and on the gateway link at 19200):
@@ -30,7 +37,9 @@
     S,<seq>,<ms>,<wip>,<limit>,<gate>,<occ1>,<occ2>,<occ3>,<bn>,<released>,<done>,<buf_s>
                                                     status, once a second
     station 0 = whole line, 1..3 = S1..S3
-    events: BOOT, IN, OUT, GATE, HOLD, LIMIT, BUF, BN, STALL, ERR, RESET, PONG
+    events: BOOT, IN, OUT, GATE, HOLD, LIMIT, BUF, BN, STALL, LOCK, ERR, RESET, PONG
+    ERR values: 1 = OUT without IN, 2 = too many boxes on a station,
+                3 = second S1 IN while the box is still on S1 (sensor re-trigger, ignored)
   Commands the UNO accepts (from USB or from the gateway), one per line.
   In the Arduino IDE Serial Monitor: 115200 baud, line ending "Newline", then type e.g. B,15
     B,<s>   set the buffer time to s seconds (1..3600). Saved in EEPROM.
@@ -64,6 +73,8 @@ const uint16_t MAX_BUFFER_S      = 3600;
 const uint8_t  IR_ACTIVE         = LOW;    // FC-51 output goes LOW when it sees a box
 const uint16_t IR_DEBOUNCE_MS    = 25;     // signal must be stable this long
 const uint16_t IR_HOLDOFF_MS     = 400;    // ignore a second trigger from the same box
+const uint16_t IR_REARM_MS       = 300;    // sensor must have seen nothing this long before it
+                                           // can count a new box (stops flicker double counts)
 const uint8_t  GATE_CLOSED_DEG   = 95;     // servo angle that blocks the chute (arm hangs across the lane)
 // OPEN is a SMALLER angle than CLOSED so the arm swings to the RIGHT (looking down the lane).
 // Swing too small: lower GATE_OPEN_DEG (min 0). Swing too big: raise it toward GATE_CLOSED_DEG.
@@ -88,6 +99,7 @@ struct IrSensor {
   uint8_t stable;
   unsigned long changedAt;
   unsigned long lastTrigger;
+  unsigned long clearSince;       // when the sensor last went clear (nothing in front)
 };
 
 struct Station {
@@ -96,7 +108,9 @@ struct Station {
   uint8_t count;                  // boxes on the station now (occupancy)
   unsigned long activeSince;      // start of the current active period
   bool over;                      // busy longer than the buffer time (red LED)
-  bool stallSent;
+  bool stallSent;                 // STALL sent for this active period = suspected breakdown
+  bool frozen;                    // line locked by a breakdown elsewhere: sensors ignored, timer paused
+  unsigned long frozenAt;
 };
 
 IrSensor irIn[3], irOut[3];
@@ -113,6 +127,9 @@ bool servoAttached = false;
 unsigned long servoDetachAt = 0;
 unsigned long s1EmptySince = 0;   // when S1 last became empty
 bool holdSent = false;
+bool s1Armed = true;              // the gate has opened since the last box reached S1
+
+uint8_t lockMask = 0;             // broken stations (bit 0 = S1 ...); 0 = line running
 
 uint8_t bottleneck = 0;           // 0 = none, 1..3 = station
 unsigned long lastStatus = 0;
@@ -189,6 +206,7 @@ void moveServo(uint8_t deg) {
 void setGate(bool open) {
   if (open == gateOpen) return;
   gateOpen = open;
+  if (open) s1Armed = true;
   moveServo(open ? GATE_OPEN_DEG : GATE_CLOSED_DEG);
   sendEvent(0, "GATE", open ? 1 : 0);
 }
@@ -220,9 +238,9 @@ void updateGate() {
   }
 
   if (gateOpen) {
-    if (!limitOk || !s1Free) setGate(false);
+    if (!limitOk || !s1Free || lockMask) setGate(false);
   } else {
-    if (limitOk && s1Settled) setGate(true);
+    if (limitOk && s1Settled && !lockMask) setGate(true);   // never feed a box while the line is locked
   }
 }
 
@@ -230,6 +248,10 @@ void updateGate() {
 void onIn(uint8_t i) {
   unsigned long now = millis();
   Station &s = st[i];
+  if (i == 0 && s.count > 0 && !s1Armed) {
+    sendEvent(1, "ERR", 3);             // gate has not opened since the box on S1 arrived:
+    return;                             // this is the same box re-triggering the sensor
+  }
   if (s.count < FIFO_N) {
     s.inTimes[(s.head + s.count) % FIFO_N] = now;
     s.count++;
@@ -243,6 +265,7 @@ void onIn(uint8_t i) {
   }
   if (i == 0) {
     released++;
+    s1Armed = false;
     setGate(false);                     // escapement: one box per opening
   }
   sendEvent(i + 1, "IN", s.count);
@@ -258,6 +281,11 @@ void onOut(uint8_t i) {
     cycleMs = (long)(now - s.inTimes[s.head]);
     s.head = (s.head + 1) % FIFO_N;
     s.count--;
+    if (s.stallSent && s.count > 0) {   // the stuck box left: breakdown over, the next box
+      s.activeSince = now;              // on this station starts a fresh active period
+      s.over = false;
+      s.stallSent = false;
+    }
   }
   if (s.count == 0) {
     s.over = false;                     // empty again: back to green steady
@@ -271,6 +299,11 @@ void onOut(uint8_t i) {
 // for longer than the buffer time. Its red LED turns on.
 // Roser momentary bottleneck: of the over-buffer stations, the one with the longest
 // current active period. 0 = no station is over the buffer time.
+// How long station i has been active. A frozen station's clock is stopped at frozenAt.
+unsigned long activeMs(uint8_t i, unsigned long now) {
+  return (st[i].frozen ? st[i].frozenAt : now) - st[i].activeSince;
+}
+
 void updateBottleneck() {
   unsigned long now = millis();
   unsigned long bufMs = (unsigned long)bufferS * 1000UL;
@@ -278,7 +311,7 @@ void updateBottleneck() {
   unsigned long best = 0;
   for (uint8_t i = 0; i < 3; i++) {
     if (st[i].count == 0) continue;
-    unsigned long d = now - st[i].activeSince;
+    unsigned long d = activeMs(i, now);
     if (!st[i].over && d > bufMs) {
       st[i].over = true;
       beep(1, 120);                     // one short beep when a station turns red
@@ -291,11 +324,40 @@ void updateBottleneck() {
   }
   unsigned long stallMs = bufMs * STALL_FACTOR;
   for (uint8_t i = 0; i < 3; i++) {
-    if (st[i].count > 0 && !st[i].stallSent && now - st[i].activeSince > stallMs) {
+    if (st[i].count > 0 && !st[i].stallSent && activeMs(i, now) > stallMs) {
       st[i].stallSent = true;
-      sendEvent(i + 1, "STALL", (long)(now - st[i].activeSince));
+      sendEvent(i + 1, "STALL", (long)activeMs(i, now));
       beep(3, 250);
     }
+  }
+}
+
+// Breakdown lock. Broken = a station holding a box that has sent STALL.
+// While any station is broken, every other station is frozen: its sensors are ignored
+// and its timer is paused. When the last broken station's stuck box leaves, the frozen
+// stations' timers (active period and box in-times) are shifted by the frozen time, so
+// cycle times and the red LED count working time only.
+void updateLock() {
+  unsigned long now = millis();
+  uint8_t mask = 0;
+  for (uint8_t i = 0; i < 3; i++)
+    if (st[i].count > 0 && st[i].stallSent) mask |= (1 << i);
+  for (uint8_t i = 0; i < 3; i++) {
+    bool freeze = mask && !(mask & (1 << i));
+    if (freeze && !st[i].frozen) {
+      st[i].frozen = true;
+      st[i].frozenAt = now;
+    } else if (!freeze && st[i].frozen) {
+      unsigned long shift = now - st[i].frozenAt;
+      st[i].frozen = false;
+      st[i].activeSince += shift;
+      for (uint8_t k = 0; k < st[i].count; k++) st[i].inTimes[(st[i].head + k) % FIFO_N] += shift;
+    }
+  }
+  if (mask != lockMask) {
+    lockMask = mask;
+    sendEvent(0, "LOCK", mask);
+    if (mask) setGate(false);
   }
 }
 
@@ -307,7 +369,8 @@ bool readIr(IrSensor &s) {
   if (raw != s.lastRaw) { s.lastRaw = raw; s.changedAt = now; }
   if (now - s.changedAt >= IR_DEBOUNCE_MS && raw != s.stable) {
     s.stable = raw;
-    if (raw == IR_ACTIVE && now - s.lastTrigger >= IR_HOLDOFF_MS) {
+    if (raw != IR_ACTIVE) { s.clearSince = now; return false; }
+    if (now - s.clearSince >= IR_REARM_MS && now - s.lastTrigger >= IR_HOLDOFF_MS) {
       s.lastTrigger = now;
       return true;
     }
@@ -322,6 +385,7 @@ void initIr(IrSensor &s, uint8_t pin) {
   s.stable = s.lastRaw;
   s.changedAt = millis();
   s.lastTrigger = 0;
+  s.clearSince = 0;
 }
 
 // ---------------- LEDs (andon) ----------------
@@ -372,10 +436,12 @@ void resetLine() {
   released = 0;
   done = 0;
   for (uint8_t i = 0; i < 3; i++) {
-    st[i].head = 0; st[i].count = 0; st[i].over = false; st[i].stallSent = false;
+    st[i].head = 0; st[i].count = 0; st[i].over = false; st[i].stallSent = false; st[i].frozen = false;
   }
   bottleneck = 0;
   holdSent = false;
+  lockMask = 0;
+  s1Armed = true;
   s1EmptySince = millis() - GATE_REOPEN_MS;   // S1 is empty: the gate may open right away
   sendEvent(0, "RESET", 0);
 }
@@ -429,7 +495,7 @@ void setup() {
     initIr(irOut[i], IR_OUT_PIN[i]);
     pinMode(LED_GREEN_PIN[i], OUTPUT);
     pinMode(LED_RED_PIN[i], OUTPUT);
-    st[i].head = 0; st[i].count = 0; st[i].over = false; st[i].stallSent = false;
+    st[i].head = 0; st[i].count = 0; st[i].over = false; st[i].stallSent = false; st[i].frozen = false;
   }
   pinMode(BUZZER_PIN, OUTPUT);
   loadSettings();
@@ -445,7 +511,7 @@ void setup() {
   digitalWrite(BUZZER_PIN, LOW);
   delay(350);
 
-  Serial.println(F("# OptiProductio UNO line controller v3.0"));
+  Serial.println(F("# OptiProductio UNO line controller v3.1"));
   s1EmptySince = millis() - GATE_REOPEN_MS;
   sendEvent(0, "BOOT", wipLimit);
   sendEvent(0, "BUF", bufferS);
@@ -454,11 +520,23 @@ void setup() {
 
 void loop() {
   for (uint8_t i = 0; i < 3; i++) {
-    if (readIr(irIn[i]))  onIn(i);
-    if (readIr(irOut[i])) onOut(i);
+    bool in = readIr(irIn[i]);            // always read, so a frozen sensor does not
+    bool out = readIr(irOut[i]);          // fire a stale trigger when the lock ends
+    if (st[i].frozen) {                   // breakdown elsewhere: this station's sensors are ignored,
+      // except the one box the gate had already let go before the lock: it still lands on S1
+      // and must be counted, or WIP would be one short for the rest of the run
+      if (i == 0 && in && s1Armed && st[0].count == 0) {
+        onIn(0);
+        st[0].frozenAt = millis();        // its clock starts paused at 0 s
+      }
+      continue;
+    }
+    if (in)  onIn(i);
+    if (out) onOut(i);
   }
   updateGate();
   updateBottleneck();
+  updateLock();
   updateLeds();
   updateBuzzer();
   updateServoPower();

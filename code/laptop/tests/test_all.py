@@ -223,3 +223,69 @@ def test_server_buffer_endpoint():
     assert eng.snapshot()["status"]["buf"] in (10, 20)
     sim.run_for(1_500)
     assert eng.status["buf"] == 20
+
+
+# ---------- new in v3.1: breakdown lock, good-part rule, all bottlenecks listed ----------
+def test_breakdown_lock_freezes_other_stations():
+    """S2 stuck: once it STALLs, no IN/OUT from S1 or S3 until the stuck box leaves S2."""
+    eng, sim = make("breakdown", 0, 10)
+    sim.run_for(200_000)
+    ev = eng.hist.events(eng.session_id)
+    locks = [e for e in ev if e["ev"] == "LOCK"]
+    assert locks and locks[0]["val"] == 2 and locks[-1]["val"] == 0
+    t_on = locks[0]["ms"]
+    t_off = next(e["ms"] for e in locks if e["val"] == 0)
+    during = [e for e in ev if t_on < e["ms"] < t_off and e["ev"] in ("IN", "OUT")]
+    # only exception: one box the gate had already let go before the lock lands on S1 and is counted
+    in_flight = [e for e in during if e["st"] == 1 and e["ev"] == "IN" and e["ms"] - t_on < 1000]
+    assert len(in_flight) <= 1
+    assert all(e["st"] == 2 or e in in_flight for e in during), "a frozen station's sensor was used during the lock"
+    assert not any(e["ev"] == "GATE" and e["val"] == 1 and t_on < e["ms"] < t_off for e in ev), "gate opened during lock"
+    assert not any(e["ev"] == "STALL" and e["st"] != 2 for e in ev), "frozen station wrongly declared broken"
+
+
+def test_good_parts_exclude_breakdown_box_only():
+    eng, sim = make("breakdown", 0, 10)
+    sim.run_for(200_000)
+    k = eng.snapshot()["kpi"]
+    assert k["breakdown_parts"] == 1, "exactly the box stuck on S2 is a breakdown part"
+    assert k["good"] == k["produced"] - k["scrap"] - 1
+    assert k["quality"] < 1.0
+    # slow (red) boxes are still good: in the normal run S2 often goes red with a 5 s buffer
+    eng2, sim2 = make("normal", 0, 5)
+    sim2.run_for(120_000)
+    k2 = eng2.snapshot()["kpi"]
+    assert k2["breakdown_parts"] == 0 and k2["good"] == k2["produced"]
+
+
+def test_good_part_rule_on_hand_made_events():
+    def E(ms, st, ev, val):
+        return {"ms": ms, "st": st, "ev": ev, "val": val, "seq": 0}
+    # buffer 5 s -> breakdown after 10 s. Box A: 8 s on S1 (red, still good). Box B: 12 s on S2 (breakdown part).
+    ev = [E(0, 0, "BUF", 5),
+          E(1000, 1, "IN", 1), E(9000, 1, "OUT", 8000), E(10000, 2, "IN", 1), E(12000, 2, "OUT", 2000),
+          E(13000, 3, "IN", 1), E(15000, 3, "OUT", 2000),
+          E(16000, 1, "IN", 1), E(18000, 1, "OUT", 2000), E(19000, 2, "IN", 1), E(31000, 2, "OUT", 12000),
+          E(32000, 3, "IN", 1), E(34000, 3, "OUT", 2000)]
+    k = analytics.compute(ev, {"occ": [0, 0, 0]}, 0, 0, 40_000)
+    assert k["produced"] == 2 and k["breakdown_parts"] == 1 and k["good"] == 1
+
+
+def test_bottleneck_now_lists_every_station_over_buffer():
+    def E(ms, st, ev, val):
+        return {"ms": ms, "st": st, "ev": ev, "val": val, "seq": 0}
+    ev = [E(0, 0, "BUF", 5), E(1000, 1, "IN", 1), E(2000, 1, "OUT", 1000), E(3000, 2, "IN", 1),
+          E(4000, 1, "IN", 1)]
+    k = analytics.compute(ev, {"occ": [0, 0, 0]}, 0, 0, 12_000)
+    assert k["bn_list"] == [2, 1] and k["bn_now"] == 2
+
+
+def test_frozen_time_does_not_count_on_laptop():
+    def E(ms, st, ev, val):
+        return {"ms": ms, "st": st, "ev": ev, "val": val, "seq": 0}
+    # S2 box from 1 s; S1 box from 2 s; S2 stalls at 11 s (buffer 5) -> LOCK,2 freezes S1 until 41 s
+    ev = [E(0, 0, "BUF", 5), E(1000, 2, "IN", 1), E(2000, 1, "IN", 1), E(11000, 0, "LOCK", 2)]
+    k = analytics.compute(ev, {"occ": [0, 0, 0]}, 0, 0, 40_000)
+    s1 = k["stations"][0]
+    assert s1["frozen"] and abs(s1["active_now_s"] - 9) < 0.01 and not s1["stalled"]
+    assert k["lock_now"] == 2 and k["stations"][1]["stalled"]

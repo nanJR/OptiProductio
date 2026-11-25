@@ -44,20 +44,49 @@ int main() {
   CHECK(bottleneck == 2, "bottleneck = S2 (busy the longest, Roser)");
   run(3000);
   CHECK(has(",2,STALL,"), "S2 busy > 2 x buffer -> STALL event");
+  // breakdown lock: S2 is broken, S1 and S3 are frozen
+  CHECK(lockMask == 2 && has(",0,LOCK,2"), "S2 stalled -> LOCK,2 (line frozen)");
+  CHECK(st[0].frozen && !st[1].frozen && st[2].frozen, "S1 and S3 frozen, S2 live");
+  pass(IR_OUT_PIN[0]); pass(IR_IN_PIN[2]);
+  CHECK(st[0].count == 1 && st[2].count == 0, "frozen S1 OUT and S3 IN sensors are ignored");
+  unsigned long s1Before = activeMs(0, g_ms);
+  run(4000);
+  CHECK(activeMs(0, g_ms) == s1Before && !has(",1,STALL,"), "S1 timer paused while frozen: no false S1 breakdown");
+  CHECK(!gateOpen, "gate stays closed during the lock");
+  pass(IR_OUT_PIN[1]);   // repair done: the stuck box leaves S2
+  run(5);
+  CHECK(lockMask == 0 && has(",0,LOCK,0") && !st[0].frozen, "stuck box leaves S2 -> LOCK,0, line running again");
+  CHECK(activeMs(0, g_ms) < s1Before + 300, "S1 timer resumes where it stopped");
+  // S1 re-trigger: the box on S1 seen twice by the IN sensor is counted once
+  unsigned long relBefore = released;
+  pass(IR_IN_PIN[0]);
+  CHECK(released == relBefore && st[0].count == 1 && has(",1,ERR,3"), "second S1 IN with gate closed is ignored (ERR,3)");
+  pass(IR_IN_PIN[2]); pass(IR_OUT_PIN[2]);   // the S2 box goes through S3
   // CONWIP mode
-  Serial.feed("L,2"); run(5);
-  pass(IR_OUT_PIN[0]);  // S1 empties, WIP = 2 (S2 + box in transit)
+  Serial.feed("L,1"); run(5);
+  pass(IR_OUT_PIN[0]);  // S1 empties, WIP = 1 (box in transit to S2)
   run(1500);
-  CHECK(!gateOpen && has(",HOLD,2"), "CONWIP L=2: WIP 2 -> gate held even though S1 is empty");
-  pass(IR_OUT_PIN[1]); pass(IR_IN_PIN[2]); pass(IR_OUT_PIN[2]);  // one box leaves the line
+  CHECK(!gateOpen && has(",HOLD,1"), "CONWIP L=1: WIP 1 -> gate held even though S1 is empty");
+  pass(IR_IN_PIN[1]); pass(IR_OUT_PIN[1]); pass(IR_IN_PIN[2]); pass(IR_OUT_PIN[2]);  // the box leaves the line
   run(50);
-  CHECK(gateOpen, "WIP drops below 2 -> gate opens");
+  CHECK(gateOpen, "WIP drops below 1 -> gate opens");
   Serial.feed("H"); run(5);
-  CHECK(has("# settings: buffer=3 s, WIP limit=2"), "H prints settings");
+  CHECK(has("# settings: buffer=3 s, WIP limit=1"), "H prints settings");
   // reboot: settings come back from EEPROM
   bufferS = 0; wipLimit = 9; Serial.out.clear();
   setup(); run(20);
-  CHECK(bufferS == 3 && wipLimit == 2, "buffer and limit survive a reboot (EEPROM)");
+  CHECK(bufferS == 3 && wipLimit == 1, "buffer and limit survive a reboot (EEPROM)");
+  // in-flight box: the gate let a box go, then a breakdown locks the line before it lands on S1
+  Serial.feed("L,0"); Serial.feed("R"); run(1200);
+  CHECK(gateOpen, "after reset the gate opens");
+  pass(IR_IN_PIN[1]); run(6500);                  // S2 box stuck > 2 x 3 s -> lock (gate closes)
+  CHECK(lockMask == 2 && !gateOpen, "S2 breakdown locks the line");
+  pass(IR_IN_PIN[0]);                             // the already-released box lands on frozen S1
+  CHECK(st[0].count == 1 && released == 1, "box released before the lock is still counted at S1");
+  run(8000);
+  CHECK(activeMs(0, g_ms) < 1000 && !st[0].over, "its clock stays paused near 0 s (no false red / stall)");
+  pass(IR_IN_PIN[0]);
+  CHECK(st[0].count == 1 && released == 1, "a second S1 IN while frozen is ignored");
   printf("\n%d failure(s)\nLast lines:\n", fails);
   for (auto &l : Serial.out) printf("  %s\n", l.c_str());
   return fails;

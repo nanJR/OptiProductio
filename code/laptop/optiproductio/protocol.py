@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 
-EVENTS = {"BOOT", "IN", "OUT", "GATE", "HOLD", "LIMIT", "BUF", "BN", "STALL", "ERR", "RESET", "PONG"}
+EVENTS = {"BOOT", "IN", "OUT", "GATE", "HOLD", "LIMIT", "BUF", "BN", "STALL", "LOCK", "ERR", "RESET", "PONG"}
 STATUS_KEYS = ("seq", "ms", "wip", "limit", "gate", "occ", "bn", "released", "done", "buf")
 
 

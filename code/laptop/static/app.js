@@ -134,7 +134,11 @@ function render(s) {
 
   const banner = $("banner");
   if (!k || !st) { banner.className = "banner"; banner.classList.remove("hidden"); return; }
-  if (k.line_down_now) {
+  const lockSt = [1, 2, 3].filter((n) => k.lock_now & (1 << (n - 1)));
+  if (lockSt.length) {
+    banner.className = "banner alert";
+    banner.textContent = `Line LOCKED: breakdown at ${lockSt.map((n) => "S" + n).join(", ")}. Sensors of the other stations are ignored and the gate stays closed until the stuck box leaves.`;
+  } else if (k.line_down_now) {
     banner.className = "banner alert";
     banner.textContent = `Line DOWN: ${k.down_reason_now}. No box has left S3 for more than ${s.cfg.down_after_s} s.`;
   } else if (!live) {
@@ -149,7 +153,7 @@ function render(s) {
 
   // scoreboard
   $("tGood").innerHTML = `${k.good}<small>/ ${Math.floor(k.target)} target</small>`;
-  $("tGoodSub").textContent = `efficiency ${k.efficiency_pct == null ? "-" : k.efficiency_pct + "%"} · ${k.scrap} scrap · run ${fmtDur(k.pbt_s)}`;
+  $("tGoodSub").textContent = `efficiency ${k.efficiency_pct == null ? "-" : k.efficiency_pct + "%"} · ${k.breakdown_parts || 0} breakdown · ${k.scrap} scrap · run ${fmtDur(k.pbt_s)}`;
   $("tOee").textContent = pct(k.oee);
   [["A", k.availability], ["E", k.effectiveness], ["Q", k.quality]].forEach(([n, v]) => {
     $("t" + n).textContent = pct(v); $("b" + n).style.width = (v == null ? 0 : v * 100) + "%";
@@ -161,9 +165,12 @@ function render(s) {
   const gateTxt = st.gate ? "OPEN" : (gateCls === "hold" ? "HELD BY LIMIT" : (st.occ[0] > 0 ? "CLOSED: S1 BUSY" : "CLOSED"));
   for (const id of ["tGate", "fGate"]) { $(id).className = "chip " + gateCls; $(id).textContent = gateTxt; }
   $("tWipAvg").textContent = ` · avg ${fmt(k.wip_avg, 2)}`;
-  const bnSt = k.bn_now ? k.stations[k.bn_now - 1] : null;
-  $("tBn").textContent = k.bn_now ? "S" + k.bn_now : "none";
-  $("tBnSub").textContent = (bnSt ? `busy ${fmt(bnSt.active_now_s, 1)} s > buffer ${fmt(k.cfg.buffer_s, 0)} s · ` : `none over the ${fmt(k.cfg.buffer_s, 0)} s buffer · `) + (k.bn_overall ? `run: S${k.bn_overall}` : "");
+  // every station over the buffer time right now, longest first (Roser: the first one is the main bottleneck)
+  const bnList = k.bn_list || (k.bn_now ? [k.bn_now] : []);
+  $("tBn").textContent = bnList.length ? bnList.map((n) => "S" + n).join(", ") : "none";
+  $("tBnSub").textContent = (bnList.length
+    ? bnList.map((n) => { const x = k.stations[n - 1]; return `S${n} ${fmt(x.active_now_s, 0)} s${x.stalled ? " (breakdown)" : ""}`; }).join(" · ") + ` > buffer ${fmt(k.cfg.buffer_s, 0)} s · `
+    : `none over the ${fmt(k.cfg.buffer_s, 0)} s buffer · `) + (k.bn_overall ? `run: S${k.bn_overall}` : "");
   $("tLt").innerHTML = `${fmt(k.lead_avg_s, 1)}<small>s</small>`;
   $("tLtSub").textContent = k.little_rhs == null ? "Little's law check -" : `TH x LT = ${fmt(k.little_rhs, 2)} vs WIP ${fmt(k.wip_avg, 2)}`;
 
@@ -190,13 +197,14 @@ function fmtDur(sec) {
 function renderStation(i, x, isBn, bufS) {
   const box = $("st" + (i + 1));
   const led = x.led || (x.occ > 0 ? "blink" : "green");
-  box.className = "station" + (led === "red" ? " isbn" : "") + (x.stalled ? " stall" : "");
+  box.className = "station" + (led === "red" ? " isbn" : "") + (x.stalled ? " stall" : "") + (x.frozen ? " frozen" : "");
   const g = led === "green" ? "on" : (led === "blink" ? "on blink" : "");
   const r = led === "red" ? "on" : "";
   let stateTxt = "Empty: waiting for a box";
   if (led === "blink") stateTxt = `<b>Working</b> ${fmt(x.active_now_s, 0)} of ${fmt(bufS, 0)} s buffer`;
   if (led === "red") stateTxt = `<b>${isBn ? "Bottleneck" : "Over buffer"}</b> · busy ${fmt(x.active_now_s, 1)} s`;
   if (x.stalled) stateTxt = `<b>Stalled</b> ${fmt(x.active_now_s, 0)} s (2 x buffer): suspected breakdown`;
+  if (x.frozen) stateTxt = `<b>Frozen</b>: breakdown at another station, sensors ignored, timer paused` + (x.occ ? ` at ${fmt(x.active_now_s, 0)} s` : "");
   box.innerHTML = `
     <div class="head"><span class="name">S${i + 1}</span>
       <span class="lights"><span class="lamp g ${g}"></span><span class="lamp r ${r}"></span></span></div>
@@ -348,7 +356,8 @@ const EV_TEXT = {
   GATE: (e) => e.val ? "gate opened" : "gate closed", HOLD: (e) => `gate held: WIP ${e.val} at limit`,
   BN: (e) => e.val ? `bottleneck is now S${e.val} (over buffer time)` : "no station over the buffer time", LIMIT: (e) => `WIP limit set to ${e.val || "off (S1 gate only)"}`,
   BUF: (e) => `buffer time set to ${e.val} s`,
-  STALL: (e) => `stalled ${(e.val / 1000).toFixed(0)} s`, ERR: (e) => e.val === 1 ? "OUT without IN (check IN sensor)" : "too many boxes (sensor noise?)",
+  STALL: (e) => `stalled ${(e.val / 1000).toFixed(0)} s`, ERR: (e) => e.val === 1 ? "OUT without IN (check IN sensor)" : (e.val === 3 ? "S1 IN seen twice for one box, ignored" : "too many boxes (sensor noise?)"),
+  LOCK: (e) => e.val ? `line locked: breakdown at ${[1, 2, 3].filter((n) => e.val & (1 << (n - 1))).map((n) => "S" + n).join(", ")}` : "breakdown cleared, line running",
   BOOT: (e) => `UNO started, limit ${e.val}`, RESET: () => "counters reset", PONG: () => "UNO answered ping", SCRAP: () => "operator marked scrap",
 };
 function renderLog(events) {

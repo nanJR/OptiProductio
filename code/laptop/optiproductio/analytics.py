@@ -14,6 +14,14 @@ Main ideas (ELI5 versions are in docs/phase2/HOW_IT_WORKS.md):
     textbook method, so they stay comparable with the literature.
   * ISO 22400-2 KPI names: PBT, APT, ADOT, PQ, GQ, SQ, PRI, A, E, QR, OEE.
   * Little's law (Hopp & Spearman): WIP = throughput x lead time.
+  * Breakdown lock (firmware v3.1): a station busy for 2 x buffer time is "broken"
+    (STALL). The UNO then sends LOCK,<mask> and freezes every other station: their
+    sensors are ignored and their timers paused until the stuck box leaves (LOCK,0).
+    The laptop pauses the same timers, so both sides agree on red / stalled.
+  * Good part: a box that left every station before that station was declared
+    broken (cycle time at each station <= 2 x buffer time). Being slow / red
+    (over the buffer) is fine. A box that sat on a station past 2 x buffer is a
+    "breakdown part" and is not good. Operator scrap is also not good.
 """
 from __future__ import annotations
 
@@ -25,6 +33,35 @@ DEFAULT_CFG = {
     "buffer_s": 10.0,        # fallback buffer time if no BUF event / status has arrived yet
     "timeline_s": 600,       # how much history the timeline chart shows
 }
+
+
+def _lock_intervals(events, t_end):
+    """[(start, end, mask)] for every stretch where the line was locked by a breakdown."""
+    out, cur, since = [], 0, None
+    for e in events:
+        if e["ev"] in ("BOOT", "RESET"):
+            if cur:
+                out.append((since, e["ms"], cur))
+            cur, since = 0, None
+        elif e["ev"] == "LOCK":
+            if cur:
+                out.append((since, e["ms"], cur))
+            cur, since = e["val"], e["ms"]
+    if cur:
+        out.append((since, t_end, cur))
+    return out
+
+
+def _frozen_ms(locks, s, a, b):
+    """Time between a and b when station s (0..2) was frozen by a breakdown at another station."""
+    tot = 0
+    for la, lb, mask in locks:
+        if mask & (1 << s):
+            continue
+        c = _clip(la, lb, a, b)
+        if c:
+            tot += c[1] - c[0]
+    return tot
 
 
 def _clip(a, b, t0, t1):
@@ -186,8 +223,31 @@ def compute(events, init, session_start, t0, t1, cfg=None):
     gate_state, gate_since = None, None
     gate_segments = []
     wip_start = None
+    # box-by-box tracking for the good-part rule: each box carries a "breakdown" flag.
+    # boxes on each station (FIFO) and between stations (S1->S2, S2->S3)
+    # (a box the laptop cannot match, e.g. after a missed sensor, is assumed fine)
+    on_st = [deque(), deque(), deque()]
+    between = [None, deque(), deque()]                      # index 1: S1->S2, index 2: S2->S3
+    breakdown_parts = 0
+    buf_at = float(c["buffer_s"])
+    first_buf = next((e["val"] for e in events if e["ev"] == "BUF"), None)
+    if first_buf is not None:
+        buf_at = float(first_buf)
     for e in events:
         ms, s, ev = e["ms"], e["st"], e["ev"]
+        if ev == "BUF":
+            buf_at = float(e["val"])
+        elif ev == "IN" and 1 <= s <= 3:
+            q = between[s - 1] if s > 1 else None
+            on_st[s - 1].append(q.popleft() if q else False)
+        elif ev == "OUT" and 1 <= s <= 3:
+            bad = on_st[s - 1].popleft() if on_st[s - 1] else (between[s - 1].popleft() if s > 1 and between[s - 1] else False)
+            if e["val"] > 2 * buf_at * 1000:      # stayed past 2 x buffer = declared broken while on it
+                bad = True
+            if s < 3:
+                between[s].append(bad)
+            elif bad and ms >= t0:
+                breakdown_parts += 1
         if wip_start is None and ms >= t0:
             wip_start = max(0, cum_in - cum_out)
         if ev == "IN" and s == 1:
@@ -259,7 +319,7 @@ def compute(events, init, session_start, t0, t1, cfg=None):
 
     # --- ISO 22400-2 style KPIs ---
     apt = max(0, pbt - adot)
-    good = max(0, produced - scrap)
+    good = max(0, produced - scrap - breakdown_parts)
     A = apt / pbt if pbt > 0 else None
     E = min(1.0, ideal_ms * produced / apt) if apt > 0 else None
     QR = good / produced if produced > 0 else None
@@ -271,12 +331,15 @@ def compute(events, init, session_start, t0, t1, cfg=None):
 
     # --- per-station figures + Roser ---
     rz = roser(periods, t0, t1)
+    locks = _lock_intervals(events, t1)
+    lock_now = locks[-1][2] if locks and locks[-1][1] >= t1 else 0
     stations = []
     for s in range(3):
         busy = sum((cl[1] - cl[0]) for cl in (_clip(p[0], p[1], t0, t1) for p in periods[s]) if cl)
         full = [p[1] - p[0] for p in periods[s] if _clip(p[0], p[1], t0, t1)]
         ongoing = periods[s][-1] if periods[s] and periods[s][-1][2] else None
-        active_now_ms = (t1 - ongoing[0]) if ongoing else 0
+        # same clock as the UNO: time frozen by a breakdown elsewhere does not count
+        active_now_ms = (t1 - ongoing[0] - _frozen_ms(locks, s, ongoing[0], t1)) if ongoing else 0
         over = bool(ongoing and active_now_ms > buffer_ms)
         ct = cycle[s]
         stations.append({
@@ -296,12 +359,15 @@ def compute(events, init, session_start, t0, t1, cfg=None):
             # the LEDs on the table: green steady = empty, blink = WIP inside buffer, red = over buffer
             "led": "red" if over else ("blink" if ongoing else "green"),
             "stalled": bool(ongoing and active_now_ms >= stall_ms),
+            "frozen": bool(lock_now and not lock_now & (1 << s)),
             "sole_pct": 100 * rz["sole_ms"][s] / pbt if pbt > 0 else 0,
             "shift_pct": 100 * rz["shift_ms"][s] / pbt if pbt > 0 else 0,
         })
     # momentary bottleneck now = longest ongoing active period among stations over the buffer time
     live = [st for st in stations if st["occ"] > 0 and st["over_buffer"]]
     bn_now = max(live, key=lambda st: st["active_now_s"])["st"] if live else 0
+    # every station over the buffer now, longest first (bn_now is the first one)
+    bn_list = [st["st"] for st in sorted(live, key=lambda st: -st["active_now_s"])]
     score = [st["sole_pct"] + st["shift_pct"] for st in stations]
     bn_overall = (max(range(3), key=lambda i: score[i]) + 1) if any(score) else 0
     aap = [st["avg_active_period_s"] for st in stations]
@@ -342,7 +408,8 @@ def compute(events, init, session_start, t0, t1, cfg=None):
         {"sym": "APT", "name": "Actual production time", "formula": "PBT - ADOT", "value": apt / 1000, "unit": "s"},
         {"sym": "PQ", "name": "Produced quantity", "formula": "boxes out of S3", "value": produced, "unit": "pcs"},
         {"sym": "SQ", "name": "Scrap quantity", "formula": "boxes marked scrap by the operator", "value": scrap, "unit": "pcs"},
-        {"sym": "GQ", "name": "Good quantity", "formula": "PQ - SQ", "value": good, "unit": "pcs"},
+        {"sym": "BDQ", "name": "Breakdown parts", "formula": "boxes out of S3 that stayed on any station > 2 x buffer (%.0f s)" % c["stall_s"], "value": breakdown_parts, "unit": "pcs"},
+        {"sym": "GQ", "name": "Good quantity", "formula": "PQ - SQ - BDQ", "value": good, "unit": "pcs"},
         {"sym": "PRI", "name": "Planned run time per item", "formula": "set in Settings", "value": c["ideal_ct_s"], "unit": "s"},
         {"sym": "A", "name": "Availability", "formula": "APT / PBT", "value": pct(A), "unit": "%"},
         {"sym": "E", "name": "Effectiveness (performance)", "formula": "PRI x PQ / APT (capped at 100 %)", "value": pct(E), "unit": "%"},
@@ -360,6 +427,7 @@ def compute(events, init, session_start, t0, t1, cfg=None):
     return {
         "t0": t0, "t1": t1, "pbt_s": pbt / 1000,
         "released": released, "produced": produced, "good": good, "scrap": scrap,
+        "breakdown_parts": breakdown_parts, "lock_now": lock_now,
         "target": target, "efficiency_pct": pct(good / target) if target > 0 else None,
         "wip_now": wip_now, "transit": transit, "wip_avg": wip_avg, "lead_avg_s": lt_avg, "lead_last_s": lead[-1] if lead else None,
         "little_rhs": little_rhs, "th_per_min": th_per_s * 60, "tr_per_min": tr_per_min,
@@ -368,7 +436,7 @@ def compute(events, init, session_start, t0, t1, cfg=None):
         "line_down_now": bool(downs and downs[-1][1] >= t1),
         "down_reason_now": down_list[-1]["reason"] if downs and downs[-1][1] >= t1 else None,
         "holds": len(hold_ms),
-        "stations": stations, "bn_now": bn_now, "bn_overall": bn_overall, "bn_avg_method": bn_avg_method,
+        "stations": stations, "bn_now": bn_now, "bn_list": bn_list, "bn_overall": bn_overall, "bn_avg_method": bn_avg_method,
         "pareto": pareto_rows, "minutes": minutes, "timeline": tl, "kpis": kpis, "flow": flow,
         "cfg": c,
     }
