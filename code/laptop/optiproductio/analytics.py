@@ -237,6 +237,13 @@ def compute(events, init, session_start, t0, t1, cfg=None):
         ms, s, ev = e["ms"], e["st"], e["ev"]
         if ev == "BUF":
             buf_at = float(e["val"])
+        elif ev == "STALL" and 1 <= s <= 3:
+            # the UNO declared a breakdown at this station: the box at the front of its queue
+            # is the stuck one. Mark it now, whatever its own cycle time turns out to be.
+            if on_st[s - 1]:
+                on_st[s - 1][0] = True
+            else:
+                on_st[s - 1].append(True)   # its IN was missed: remember the stuck box anyway
         elif ev == "IN" and 1 <= s <= 3:
             q = between[s - 1] if s > 1 else None
             on_st[s - 1].append(q.popleft() if q else False)
