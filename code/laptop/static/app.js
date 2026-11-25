@@ -57,16 +57,33 @@ for (const [label, n] of presets) {
   b.onclick = () => { limitDraft = n; showLimit(); };
   $("presets").appendChild(b);
 }
-function currentBuf() { return state && state.status && state.status.buf != null ? state.status.buf : 10; }
+// Buffer time per station: pick "All stations" or S1/S2/S3, set the seconds, Apply.
+let bufStation = 0;                                       // 0 = all stations, 1..3 = one station
+function stationBufs() {
+  const k = state && state.kpi;
+  if (k && k.cfg && k.cfg.buffers_s) return k.cfg.buffers_s;
+  const b = state && state.status && state.status.buf != null ? state.status.buf : 10;
+  return [b, b, b];
+}
+function currentBuf() { const b = stationBufs(); return Math.round(bufStation ? b[bufStation - 1] : b[0]); }
 function showBuf() { $("bufVal").textContent = bufDraft; }
 const bufStep = (v) => (v >= 60 ? 10 : 1);
 $("bufMinus").onclick = () => { const v = bufDraft ?? currentBuf(); bufDraft = Math.max(1, v - bufStep(v - 1)); showBuf(); };
 $("bufPlus").onclick = () => { const v = bufDraft ?? currentBuf(); bufDraft = Math.min(3600, v + bufStep(v)); showBuf(); };
 $("bufApply").onclick = async () => {
   if (bufDraft === null) bufDraft = currentBuf();
-  await post("/api/buffer", { buffer_s: bufDraft });
-  $("bufNote").textContent = `Sent buffer time ${bufDraft} s. Waiting for the UNO to confirm...`;
+  await post("/api/buffer", { buffer_s: bufDraft, station: bufStation });
+  $("bufNote").textContent = `Sent buffer time ${bufDraft} s for ${bufStation ? "S" + bufStation : "all stations"}. Waiting for the UNO to confirm...`;
 };
+for (const [n, label] of [[0, "All stations"], [1, "S1"], [2, "S2"], [3, "S3"]]) {
+  const b = document.createElement("button");
+  b.className = "btn small" + (n === 0 ? " active" : ""); b.textContent = label; b.dataset.st = n;
+  b.onclick = () => {
+    bufStation = n; bufDraft = currentBuf(); showBuf();
+    document.querySelectorAll("#bufStations .btn").forEach((x) => x.classList.toggle("active", Number(x.dataset.st) === n));
+  };
+  $("bufStations").appendChild(b);
+}
 for (const n of [5, 10, 15, 30, 60]) {
   const b = document.createElement("button");
   b.className = "btn small"; b.textContent = n + " s"; b.dataset.n = n;
@@ -123,10 +140,12 @@ function render(s) {
   }
   if (limitDraft === null && st) { limitDraft = st.limit; showLimit(); }
   document.querySelectorAll("#presets .btn").forEach((b) => b.classList.toggle("active", st && Number(b.dataset.n) === st.limit));
-  if (bufDraft === null && st && st.buf != null) { bufDraft = st.buf; showBuf(); }
-  document.querySelectorAll("#bufPresets .btn").forEach((b) => b.classList.toggle("active", st && Number(b.dataset.n) === st.buf));
+  const bufs = stationBufs();
+  if (bufDraft === null && st) { bufDraft = currentBuf(); showBuf(); }
+  document.querySelectorAll("#bufPresets .btn").forEach((b) => b.classList.toggle("active", Number(b.dataset.n) === bufDraft));
+  $("bufNow").textContent = "Now: " + bufs.map((b, i) => `S${i + 1} ${Math.round(b)} s`).join(" · ");
   if (st && s.pending_buffer === null && $("bufNote").textContent.startsWith("Sent")) {
-    $("bufNote").textContent = `UNO confirmed buffer time ${st.buf} s. Saved in its EEPROM.`;
+    $("bufNote").textContent = `UNO confirmed: ${bufs.map((b, i) => `S${i + 1} ${Math.round(b)} s`).join(", ")}. Saved in its EEPROM.`;
   }
   if (st && s.pending_limit === null && $("limNote").textContent.startsWith("Sent")) {
     $("limNote").textContent = `UNO confirmed WIP limit ${st.limit === 0 ? "off" : st.limit}. A new run started.`;
@@ -169,13 +188,13 @@ function render(s) {
   const bnList = k.bn_list || (k.bn_now ? [k.bn_now] : []);
   $("tBn").textContent = bnList.length ? bnList.map((n) => "S" + n).join(", ") : "none";
   $("tBnSub").textContent = (bnList.length
-    ? bnList.map((n) => { const x = k.stations[n - 1]; return `S${n} ${fmt(x.active_now_s, 0)} s${x.stalled ? " (breakdown)" : ""}`; }).join(" · ") + ` > buffer ${fmt(k.cfg.buffer_s, 0)} s · `
-    : `none over the ${fmt(k.cfg.buffer_s, 0)} s buffer · `) + (k.bn_overall ? `run: S${k.bn_overall}` : "");
+    ? bnList.map((n) => { const x = k.stations[n - 1]; return `S${n} ${fmt(x.active_now_s, 0)} s > ${fmt(x.buffer_s, 0)} s${x.stalled ? " (breakdown)" : ""}`; }).join(" · ") + " · "
+    : "no station over its buffer · ") + (k.bn_overall ? `run: S${k.bn_overall}` : "");
   $("tLt").innerHTML = `${fmt(k.lead_avg_s, 1)}<small>s</small>`;
   $("tLtSub").textContent = k.little_rhs == null ? "Little's law check -" : `TH x LT = ${fmt(k.little_rhs, 2)} vs WIP ${fmt(k.wip_avg, 2)}`;
 
   // line view
-  for (let i = 0; i < 3; i++) renderStation(i, k.stations[i], k.bn_now === i + 1, k.cfg.buffer_s);
+  for (let i = 0; i < 3; i++) renderStation(i, k.stations[i], k.bn_now === i + 1, k.stations[i].buffer_s ?? k.cfg.buffer_s);
   $("buf1").textContent = k.transit[0]; $("buf2").textContent = k.transit[1];
   $("doneN").textContent = k.produced;
 
@@ -355,7 +374,7 @@ const EV_TEXT = {
   IN: (e) => `box in (on station: ${e.val})`, OUT: (e) => e.val ? `box out, cycle ${(e.val / 1000).toFixed(1)} s` : "box out (cycle unknown)",
   GATE: (e) => e.val ? "gate opened" : "gate closed", HOLD: (e) => `gate held: WIP ${e.val} at limit`,
   BN: (e) => e.val ? `bottleneck is now S${e.val} (over buffer time)` : "no station over the buffer time", LIMIT: (e) => `WIP limit set to ${e.val || "off (S1 gate only)"}`,
-  BUF: (e) => `buffer time set to ${e.val} s`,
+  BUF: (e) => `${e.st ? "S" + e.st : "all stations"} buffer time ${e.val} s`,
   STALL: (e) => `stalled ${(e.val / 1000).toFixed(0)} s`, ERR: (e) => e.val === 1 ? "OUT without IN (check IN sensor)" : (e.val === 3 ? "S1 IN seen twice for one box, ignored" : "too many boxes (sensor noise?)"),
   LOCK: (e) => e.val ? `line locked: breakdown at ${[1, 2, 3].filter((n) => e.val & (1 << (n - 1))).map((n) => "S" + n).join(", ")}` : "breakdown cleared, line running",
   BOOT: (e) => `UNO started, limit ${e.val}`, RESET: () => "counters reset", PONG: () => "UNO answered ping", SCRAP: () => "operator marked scrap",

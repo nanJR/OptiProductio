@@ -39,10 +39,11 @@ def make_app(engine):
 
     @app.post("/api/buffer")
     def buffer():
-        n = int((request.get_json(silent=True) or {}).get("buffer_s", 10))
-        n = max(1, min(3600, n))
-        engine.set_buffer(n)
-        return jsonify(ok=True, buffer_s=n)
+        d = request.get_json(silent=True) or {}
+        n = max(1, min(3600, int(d.get("buffer_s", 10))))
+        st = int(d.get("station", 0))          # 0 = all stations, 1..3 = one station
+        engine.set_buffer(n, st)
+        return jsonify(ok=True, buffer_s=n, station=st if st in (1, 2, 3) else 0)
 
     @app.post("/api/reset")
     def reset():

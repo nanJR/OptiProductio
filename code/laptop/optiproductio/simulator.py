@@ -53,7 +53,8 @@ class SimLine:
         self.recycle = deque()              # finished boxes walking back to the chute
         # firmware state
         self.limit = limit
-        self.buffer_s = max(1, min(3600, int(buffer_s)))
+        b = buffer_s if isinstance(buffer_s, (list, tuple)) else [buffer_s] * 3
+        self.buffers = [max(1, min(3600, int(x))) for x in b]   # per station, like the UNO v3.2
         self.released = 0
         self.done = 0
         self.fifo = [deque(), deque(), deque()]
@@ -70,7 +71,7 @@ class SimLine:
         self.bn = 0
         self.last_status = 0
         self.ev(0, "BOOT", self.limit)
-        self.ev(0, "BUF", self.buffer_s)
+        self.send_buffers()
 
     # ---------- firmware copy ----------
     def out(self, msg):
@@ -80,6 +81,14 @@ class SimLine:
 
     def ev(self, st, name, val):
         self.out({"type": "E", "ms": self.ms, "st": st, "ev": name, "val": int(val)})
+
+    @property
+    def buffer_s(self):
+        return self.buffers[0]
+
+    def send_buffers(self):
+        for i in range(3):
+            self.ev(i + 1, "BUF", self.buffers[i])
 
     def wip(self):
         return max(0, self.released - self.done)
@@ -149,10 +158,10 @@ class SimLine:
         elif limit_ok and s1_settled and not self.lock_mask:
             self.set_gate(True)
         # buffer time -> red LED, bottleneck among the red stations, stall
-        buf_ms = self.buffer_s * 1000
         bn, best = 0, -1
         for i in range(3):
             if self.fifo[i]:
+                buf_ms = self.buffers[i] * 1000
                 d = self.active_ms(i)
                 if not self.over[i] and d > buf_ms:
                     self.over[i] = True
@@ -162,7 +171,7 @@ class SimLine:
             self.bn = bn
             self.ev(0, "BN", bn)
         for i in range(3):
-            if self.fifo[i] and not self.stall_sent[i] and self.active_ms(i) > buf_ms * self.STALL_FACTOR:
+            if self.fifo[i] and not self.stall_sent[i] and self.active_ms(i) > self.buffers[i] * 1000 * self.STALL_FACTOR:
                 self.stall_sent[i] = True
                 self.ev(i + 1, "STALL", self.active_ms(i))
         # breakdown lock (copy of updateLock() in the sketch)
@@ -185,7 +194,7 @@ class SimLine:
             self.last_status = self.ms
             self.out({"type": "S", "ms": self.ms, "wip": self.wip(), "limit": self.limit,
                       "gate": 1 if self.gate_open else 0, "occ": [len(f) for f in self.fifo],
-                      "bn": self.bn, "released": self.released, "done": self.done, "buf": self.buffer_s})
+                      "bn": self.bn, "released": self.released, "done": self.done, "buf": self.buffers[0]})
 
     def leds(self):
         """What the 6 LEDs on the table show: 'green', 'blink' (green blinking) or 'red' per station."""
@@ -198,8 +207,19 @@ class SimLine:
                 self.limit = max(0, min(20, int(c[2:] or 0)))
                 self.ev(0, "LIMIT", self.limit)
             elif c.startswith("B"):
-                self.buffer_s = max(1, min(3600, int(c[2:] or 0)))
-                self.ev(0, "BUF", self.buffer_s)
+                parts = [int(x) for x in c[2:].replace(" ", ",").split(",") if x.strip()] or [0]
+                st, n = 0, parts[0]
+                if len(parts) >= 2 and 1 <= parts[0] <= 3 and parts[1] > 0:
+                    st, n = parts[0], parts[1]          # B,<st>,<s>
+                elif n >= 10000:
+                    st, n = n // 10000, n % 10000      # B,<st*10000+s> from the gateway
+                n = max(1, min(3600, n))
+                if not 0 <= st <= 3:
+                    st = 0
+                for i in range(3):
+                    if st in (0, i + 1):
+                        self.buffers[i] = n
+                self.send_buffers()
             elif c == "R":
                 # a reset with boxes on the table: put them all back in the chute
                 n = sum(1 for p in self.platform if p is not None) + sum(len(t) for t in self.transit) + len(self.recycle)
@@ -221,6 +241,7 @@ class SimLine:
                 self.ev(0, "RESET", 0)
             elif c == "P":
                 self.ev(0, "PONG", self.limit)
+                self.send_buffers()
 
     # ---------- physics ----------
     def proc_time(self, i):

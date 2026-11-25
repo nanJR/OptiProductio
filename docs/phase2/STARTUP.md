@@ -12,7 +12,7 @@ ELI5: starting the line is like opening a shop in the morning. First the electri
 
 | # | What | How | Check |
 |---|---|---|---|
-| 0.1 | Get the latest code | GitHub > nanJR/OptiProductio > green **Code** > **Download ZIP**, unzip. Or `git pull` in an existing clone. | `code\firmware\uno_line_controller\uno_line_controller.ino` says `v3.1` near the end. The script warns you if not. |
+| 0.1 | Get the latest code | GitHub > nanJR/OptiProductio > green **Code** > **Download ZIP**, unzip. Or `git pull` in an existing clone. | `code\firmware\uno_line_controller\uno_line_controller.ino` says `v3.2` near the end. The script warns you if not. |
 | 0.2 | Python 3.11+ | python.org. Tick **"Add python.exe to PATH"**. | `py --version` in Command Prompt |
 | 0.3 | Python packages | Done by the script on first run. By hand: see Part 3. | script prints `[OK] Python environment ready` |
 | 0.4 | Arduino IDE 2.x | arduino.cc | opens |
@@ -40,7 +40,7 @@ Why: the Windows Mosquitto service only listens to the laptop itself, so the Nod
 1. Plug the UNO in by USB. Open `code\firmware\uno_line_controller\uno_line_controller.ino`.
 2. Tools > Board > **Arduino Uno**. Tools > Port > the CH340 COM port.
 3. Click **Verify** (✓), then **Upload** (→).
-4. **Check:** LEDs all flash once, buzzer chirps, gate opens once, all three stations show **green steady**. Serial Monitor (115200 baud, line ending **Newline**) shows `# OptiProductio UNO line controller v3.1`.
+4. **Check:** LEDs all flash once, buzzer chirps, gate opens once, all three stations show **green steady**. Serial Monitor (115200 baud, line ending **Newline**) shows `# OptiProductio UNO line controller v3.2`.
 
 ### 1.2 NodeMCU (Wi-Fi gateway), only for Wi-Fi mode
 1. Turn on the phone hotspot on **2.4 GHz**. Connect the laptop to it.
@@ -62,7 +62,7 @@ Why: the Windows Mosquitto service only listens to the laptop itself, so the Nod
 5. Pick **1** for Wi-Fi or **2** for USB (details below).
 6. **NodeMCU:** power it (USB to laptop or a phone charger). Within about 10 s the dashboard shows **NodeMCU online**.
 7. Dashboard opens by itself at `http://localhost:5000`. Phones on the hotspot: `http://<laptop IP>:5000`.
-8. On the dashboard, set the **buffer time** (e.g. 10 s) and **WIP limit** (Off to start), press **Reset line counts** with the table empty, then put the boxes in the chute.
+8. On the dashboard, set the **buffer time of each station** (pick All stations / S1 / S2 / S3, set seconds, Apply; e.g. S1 8 s, S2 15 s, S3 6 s) and **WIP limit** (Off to start), press **Reset line counts** with the table empty, then put the boxes in the chute.
 
 ### What option 1 (Wi-Fi) does
 1. Refuses to go on if the Mosquitto service is still running (run option 7 once as admin).
@@ -127,11 +127,12 @@ Type them in the Arduino Serial Monitor (115200, **Newline**). The dashboard but
 
 | Type | Does | UNO answers |
 |---|---|---|
-| `B,15` | buffer time 15 s (saved in EEPROM). Red after 15 s, breakdown + line lock after 30 s | `E,...,0,BUF,15` |
+| `B,15` | buffer time 15 s for **all** stations (saved in EEPROM). Red after 15 s, breakdown + line lock after 30 s | `E,...,1,BUF,15` `E,...,2,BUF,15` `E,...,3,BUF,15` |
+| `B,2,20` | buffer time 20 s for **S2 only** (also `B,1,..` / `B,3,..`). Each station turns red after its own buffer and breaks down after 2 × its own buffer | `E,...,2,BUF,20` |
 | `L,3` | WIP limit 3 (CONWIP). `L,0` = off, gate follows S1 only | `E,...,0,LIMIT,3` |
 | `H` | show settings and this list | `# settings: ...` |
 | `R` | reset counters (clear the table first) | `E,...,0,RESET,0` |
-| `P` | ping | `E,...,0,PONG,...` |
+| `P` | ping (also re-sends the three buffers) | `E,...,0,PONG,...` + 3 BUF lines |
 
 Events to recognise in the log: `IN`/`OUT` (box at a sensor), `GATE,1/0`, `BN,n` (bottleneck now Sn), `STALL` (breakdown suspected), `LOCK,mask` (line frozen: 1 = S1, 2 = S2, 4 = S3, 0 = running again), `HOLD` (WIP limit reached), `ERR,1` (OUT without IN: an IN sensor missed), `ERR,3` (S1 seen twice for one box, ignored).
 
@@ -152,7 +153,7 @@ Ctrl+C in the dashboard window, close the Mosquitto window, unplug the servo sup
 | Symptom | Fix |
 |---|---|
 | Script says Python not found | Install Python with "Add to PATH" ticked, reopen the script |
-| `[!] sketch is NOT v3.1` | Download the ZIP again from GitHub main |
+| `[!] sketch is NOT v3.2` | Download the ZIP again from GitHub main |
 | "Access is denied" on COM port | Close the Arduino Serial Monitor |
 | Dashboard "no data" in Wi-Fi mode | Mosquitto window open? NodeMCU LED solid? `MQTT_HOST` = today's laptop IP? Option 7 done? If in doubt, switch to option 2 (USB): same data, 30 seconds |
 | NodeMCU `MQTT failed, state -2` | wrong IP, firewall, or laptop on another Wi-Fi |

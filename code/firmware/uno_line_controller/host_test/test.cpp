@@ -20,10 +20,10 @@ int main() {
   setup();
   run(20);
   CHECK(gateOpen && gateServo.angle == GATE_OPEN_DEG, "gate opens once at start");
-  CHECK(bufferS == 10 && wipLimit == 0, "first boot defaults: buffer 10 s, WIP limit off");
+  CHECK(bufferS[0] == 10 && bufferS[2] == 10 && wipLimit == 0, "first boot defaults: buffer 10 s, WIP limit off");
   CHECK(led(0) == 'G' && led(1) == 'G' && led(2) == 'G', "all stations empty -> green steady");
   Serial.feed("B,3"); run(5);
-  CHECK(bufferS == 3 && has(",BUF,3"), "B,3 from Serial Monitor sets buffer 3 s");
+  CHECK(bufferS[0] == 3 && bufferS[1] == 3 && bufferS[2] == 3 && has(",3,BUF,3"), "B,3 from Serial Monitor sets all buffers to 3 s");
   pass(IR_IN_PIN[0]);
   CHECK(!gateOpen && gateServo.angle == GATE_CLOSED_DEG, "box enters S1 -> gate closes");
   CHECK(led(0) == 'B', "S1 box inside buffer -> green blinking");
@@ -71,15 +71,21 @@ int main() {
   run(50);
   CHECK(gateOpen, "WIP drops below 1 -> gate opens");
   Serial.feed("H"); run(5);
-  CHECK(has("# settings: buffer=3 s, WIP limit=1"), "H prints settings");
+  CHECK(has("# settings: buffer S1=3 S2=3 S3=3 s, WIP limit=1"), "H prints settings");
+  Serial.feed("B,2,7"); run(5);
+  CHECK(bufferS[0] == 3 && bufferS[1] == 7 && bufferS[2] == 3 && has(",2,BUF,7"), "B,2,7 sets only S2 to 7 s");
+  Serial.feed("B,30012"); run(5);
+  CHECK(bufferS[2] == 12 && bufferS[1] == 7, "B,30012 (gateway form) sets only S3 to 12 s");
+  Serial.feed("b 1 4"); run(5);
+  CHECK(bufferS[0] == 4, "b 1 4 also works");
   // reboot: settings come back from EEPROM
-  bufferS = 0; wipLimit = 9; Serial.out.clear();
+  bufferS[0] = bufferS[1] = bufferS[2] = 0; wipLimit = 9; Serial.out.clear();
   setup(); run(20);
-  CHECK(bufferS == 3 && wipLimit == 1, "buffer and limit survive a reboot (EEPROM)");
+  CHECK(bufferS[0] == 4 && bufferS[1] == 7 && bufferS[2] == 12 && wipLimit == 1, "per-station buffers and limit survive a reboot (EEPROM)");
   // in-flight box: the gate let a box go, then a breakdown locks the line before it lands on S1
   Serial.feed("L,0"); Serial.feed("R"); run(1200);
   CHECK(gateOpen, "after reset the gate opens");
-  pass(IR_IN_PIN[1]); run(6500);                  // S2 box stuck > 2 x 3 s -> lock (gate closes)
+  pass(IR_IN_PIN[1]); run(14500);                 // S2 box stuck > 2 x 7 s -> lock (gate closes)
   CHECK(lockMask == 2 && !gateOpen, "S2 breakdown locks the line");
   pass(IR_IN_PIN[0]);                             // the already-released box lands on frozen S1
   CHECK(st[0].count == 1 && released == 1, "box released before the lock is still counted at S1");
@@ -87,6 +93,13 @@ int main() {
   CHECK(activeMs(0, g_ms) < 1000 && !st[0].over, "its clock stays paused near 0 s (no false red / stall)");
   pass(IR_IN_PIN[0]);
   CHECK(st[0].count == 1 && released == 1, "a second S1 IN while frozen is ignored");
+  // each station turns red on its own buffer: S1 4 s, S2 7 s
+  Serial.feed("L,0"); Serial.feed("R"); run(1200);
+  pass(IR_IN_PIN[1]); pass(IR_IN_PIN[0]);
+  run(4500);
+  CHECK(st[0].over && !st[1].over, "after ~4.6 s: S1 (buffer 4 s) red, S2 (buffer 7 s) still blinking");
+  run(2600);
+  CHECK(st[1].over, "after ~7.2 s on S2: S2 red too");
   printf("\n%d failure(s)\nLast lines:\n", fails);
   for (auto &l : Serial.out) printf("  %s\n", l.c_str());
   return fails;

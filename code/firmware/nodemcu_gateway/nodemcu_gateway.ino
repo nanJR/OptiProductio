@@ -14,7 +14,8 @@
     rvce/idealab/line1/gateway/stats  {"rssi":-55,"lines":1234,"bad":0,"up_s":600}
   Commands it listens to:
     rvce/idealab/line1/cmd/wip_limit   payload "4"  -> sends "L,4" to the UNO
-    rvce/idealab/line1/cmd/buffer      payload "15" -> sends "B,15" (buffer time in s)
+    rvce/idealab/line1/cmd/buffer      payload "15" -> sends "B,15" (all stations 15 s);
+                                       payload "20015" -> "B,20015" = station 2 only, 15 s (UNO v3.2 splits it)
     rvce/idealab/line1/cmd/reset       any payload  -> sends "R"
     rvce/idealab/line1/cmd/ping        any payload  -> sends "P"
 

@@ -13,9 +13,9 @@
        Optional CONWIP mode (constant WIP): with a WIP limit n > 0 the gate ALSO
        waits until WIP < n. Limit 0 (the default) = only the S1 rule above.
        The rule runs here, so the line keeps working if Wi-Fi or the laptop drops.
-    4. Buffer time (user setting, seconds, saved in EEPROM): how long a station may
-       stay busy before we call it a bottleneck. Different products need different
-       times, so it is a setting, not a constant.
+    4. Buffer time (user setting, seconds, saved in EEPROM), ONE PER STATION: how long
+       that station may stay busy before we call it a bottleneck. Each station does a
+       different job, so each has its own buffer (e.g. S1 8 s, S2 15 s, S3 6 s).
     5. Finds the momentary bottleneck (Roser active-period method): among the
        stations busy longer than the buffer time, the one busy the longest without a break.
     6. Drives one green + one red LED per station (andon lights) and a buzzer:
@@ -35,18 +35,21 @@
   Serial protocol (same lines on USB at 115200 baud and on the gateway link at 19200):
     E,<seq>,<ms>,<station>,<event>,<value>          one event
     S,<seq>,<ms>,<wip>,<limit>,<gate>,<occ1>,<occ2>,<occ3>,<bn>,<released>,<done>,<buf_s>
-                                                    status, once a second
+                                                    status, once a second (buf_s = S1's buffer;
+                                                    all three come as BUF events, station 1..3)
     station 0 = whole line, 1..3 = S1..S3
     events: BOOT, IN, OUT, GATE, HOLD, LIMIT, BUF, BN, STALL, LOCK, ERR, RESET, PONG
     ERR values: 1 = OUT without IN, 2 = too many boxes on a station,
                 3 = second S1 IN while the box is still on S1 (sensor re-trigger, ignored)
   Commands the UNO accepts (from USB or from the gateway), one per line.
   In the Arduino IDE Serial Monitor: 115200 baud, line ending "Newline", then type e.g. B,15
-    B,<s>   set the buffer time to s seconds (1..3600). Saved in EEPROM.
+    B,<s>       set the buffer time of ALL stations to s seconds (1..3600). Saved in EEPROM.
+    B,<st>,<s>  set the buffer time of station st (1..3) only, e.g. B,2,15 = S2 15 s.
+    B,<st*10000+s>  same thing as one number (what the NodeMCU passes on), e.g. B,20015
     L,<n>   set WIP limit to n (0 = off: one box at S1 only). Saved in EEPROM.
     H       print the current settings and this command list
     R       reset all counters (clear the boxes off the table first)
-    P       ping, answered with E,...,PONG
+    P       ping, answered with E,...,PONG and the three BUF events
 
   Libraries: Servo, SoftwareSerial, EEPROM (all built into the Arduino IDE).
   Board: Arduino UNO (clone with CH340 is fine).
@@ -120,7 +123,7 @@ uint16_t seq = 0;
 unsigned long released = 0;       // boxes that entered S1 (released into the line)
 unsigned long done = 0;           // boxes that left S3 (finished)
 uint8_t wipLimit = DEFAULT_WIP_LIMIT;  // 0 = no limit
-uint16_t bufferS = DEFAULT_BUFFER_S;   // buffer time in seconds
+uint16_t bufferS[3] = {DEFAULT_BUFFER_S, DEFAULT_BUFFER_S, DEFAULT_BUFFER_S};  // per station, seconds
 
 bool gateOpen = false;
 bool servoAttached = false;
@@ -166,7 +169,7 @@ void sendStatus() {
   char buf[90];
   snprintf(buf, sizeof(buf), "S,%u,%lu,%ld,%u,%u,%u,%u,%u,%u,%lu,%lu,%u",
            seq++, millis(), wip(), wipLimit, gateOpen ? 1 : 0,
-           st[0].count, st[1].count, st[2].count, bottleneck, released, done, bufferS);
+           st[0].count, st[1].count, st[2].count, bottleneck, released, done, bufferS[0]);
   emit(buf);
 }
 
@@ -306,12 +309,12 @@ unsigned long activeMs(uint8_t i, unsigned long now) {
 
 void updateBottleneck() {
   unsigned long now = millis();
-  unsigned long bufMs = (unsigned long)bufferS * 1000UL;
   uint8_t bn = 0;
   unsigned long best = 0;
   for (uint8_t i = 0; i < 3; i++) {
     if (st[i].count == 0) continue;
     unsigned long d = activeMs(i, now);
+    unsigned long bufMs = (unsigned long)bufferS[i] * 1000UL;   // this station's own buffer
     if (!st[i].over && d > bufMs) {
       st[i].over = true;
       beep(1, 120);                     // one short beep when a station turns red
@@ -322,8 +325,8 @@ void updateBottleneck() {
     bottleneck = bn;
     sendEvent(0, "BN", bn);
   }
-  unsigned long stallMs = bufMs * STALL_FACTOR;
   for (uint8_t i = 0; i < 3; i++) {
+    unsigned long stallMs = (unsigned long)bufferS[i] * 1000UL * STALL_FACTOR;
     if (st[i].count > 0 && !st[i].stallSent && activeMs(i, now) > stallMs) {
       st[i].stallSent = true;
       sendEvent(i + 1, "STALL", (long)activeMs(i, now));
@@ -405,31 +408,45 @@ void updateLeds() {
 }
 
 // ---------------- Commands ----------------
-// EEPROM layout: [0] marker 0xA6, [1] WIP limit, [2..3] buffer time (s).
-// The marker changed from v2 (0xA5), so an old saved limit is ignored once.
-const uint8_t EE_MARK = 0xA6;
+// EEPROM layout: [0] marker 0xA7, [1] WIP limit, [2..3] S1 buffer, [4..5] S2, [6..7] S3 (s).
+// v3.0/v3.1 (marker 0xA6) had one buffer in [2..3]: it is copied to all three stations once.
+const uint8_t EE_MARK = 0xA7;
+const uint8_t EE_MARK_V3 = 0xA6;
 
 void saveSettings() {
   EEPROM.update(0, EE_MARK);
   EEPROM.update(1, wipLimit);
-  EEPROM.update(2, bufferS & 0xFF);
-  EEPROM.update(3, bufferS >> 8);
+  for (uint8_t i = 0; i < 3; i++) {
+    EEPROM.update(2 + 2 * i, bufferS[i] & 0xFF);
+    EEPROM.update(3 + 2 * i, bufferS[i] >> 8);
+  }
+}
+
+uint16_t readBuf(uint8_t addr) {
+  uint16_t b = EEPROM.read(addr) | ((uint16_t)EEPROM.read(addr + 1) << 8);
+  return (b >= 1 && b <= MAX_BUFFER_S) ? b : DEFAULT_BUFFER_S;
 }
 
 void loadSettings() {
   wipLimit = DEFAULT_WIP_LIMIT;
-  bufferS = DEFAULT_BUFFER_S;
-  if (EEPROM.read(0) != EE_MARK) { saveSettings(); return; }
+  for (uint8_t i = 0; i < 3; i++) bufferS[i] = DEFAULT_BUFFER_S;
+  uint8_t mark = EEPROM.read(0);
+  if (mark != EE_MARK && mark != EE_MARK_V3) { saveSettings(); return; }
   if (EEPROM.read(1) <= 20) wipLimit = EEPROM.read(1);
-  uint16_t b = EEPROM.read(2) | ((uint16_t)EEPROM.read(3) << 8);
-  if (b >= 1 && b <= MAX_BUFFER_S) bufferS = b;
+  for (uint8_t i = 0; i < 3; i++) bufferS[i] = readBuf(mark == EE_MARK ? 2 + 2 * i : 2);
+  if (mark == EE_MARK_V3) saveSettings();   // upgrade the layout once
+}
+
+void sendBuffers() {
+  for (uint8_t i = 0; i < 3; i++) sendEvent(i + 1, "BUF", bufferS[i]);
 }
 
 void printHelp() {
-  char buf[64];
-  snprintf(buf, sizeof(buf), "# settings: buffer=%u s, WIP limit=%u (0=off)", bufferS, wipLimit);
+  char buf[80];
+  snprintf(buf, sizeof(buf), "# settings: buffer S1=%u S2=%u S3=%u s, WIP limit=%u (0=off)",
+           bufferS[0], bufferS[1], bufferS[2], wipLimit);
   emit(buf);
-  emit("# commands: B,<seconds> buffer | L,<n> WIP limit | H help | R reset | P ping");
+  emit("# commands: B,<s> all buffers | B,<st>,<s> one station | L,<n> WIP limit | H | R reset | P ping");
 }
 
 void resetLine() {
@@ -447,16 +464,24 @@ void resetLine() {
 }
 
 void handleCommand(char* cmd) {
-  // accepts "B,15", "B 15", "L,4", "L 4", "H", "R", "P" (upper or lower case)
+  // accepts "B,15", "B 15", "B,2,15", "B 2 15", "B,20015", "L,4", "L 4", "H", "R", "P" (any case)
   char c = cmd[0];
   if (c >= 'a' && c <= 'z') c -= 32;
   if (c == 'B') {
-    long n = atol(cmd + 1 + (cmd[1] == ',' || cmd[1] == ' ' ? 1 : 0));
+    char* p = cmd + 1 + (cmd[1] == ',' || cmd[1] == ' ' ? 1 : 0);
+    long n = atol(p);
+    long station = 0;                   // 0 = all stations
+    char* sep = strchr(p, ',');
+    if (!sep) sep = strchr(p, ' ');
+    if (sep && n >= 1 && n <= 3 && atol(sep + 1) > 0) { station = n; n = atol(sep + 1); }  // B,<st>,<s>
+    else if (n >= 10000) { station = n / 10000; n %= 10000; } // B,<st*10000+s> from the gateway
     if (n < 1) n = 1;
     if (n > MAX_BUFFER_S) n = MAX_BUFFER_S;
-    bufferS = (uint16_t)n;
+    if (station < 0 || station > 3) station = 0;
+    for (uint8_t i = 0; i < 3; i++)
+      if (station == 0 || station == i + 1) bufferS[i] = (uint16_t)n;
     saveSettings();
-    sendEvent(0, "BUF", bufferS);
+    sendBuffers();
   } else if (c == 'L') {
     int n = atoi(cmd + 1 + (cmd[1] == ',' || cmd[1] == ' ' ? 1 : 0));
     if (n < 0) n = 0;
@@ -470,6 +495,7 @@ void handleCommand(char* cmd) {
     resetLine();
   } else if (c == 'P') {
     sendEvent(0, "PONG", wipLimit);
+    sendBuffers();                      // lets a laptop that joined mid-run learn all three buffers
   }
 }
 
@@ -511,10 +537,10 @@ void setup() {
   digitalWrite(BUZZER_PIN, LOW);
   delay(350);
 
-  Serial.println(F("# OptiProductio UNO line controller v3.1"));
+  Serial.println(F("# OptiProductio UNO line controller v3.2"));
   s1EmptySince = millis() - GATE_REOPEN_MS;
   sendEvent(0, "BOOT", wipLimit);
-  sendEvent(0, "BUF", bufferS);
+  sendBuffers();
   printHelp();
 }
 
