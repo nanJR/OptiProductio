@@ -60,6 +60,10 @@ class SimLine:
         self.active_since = [0, 0, 0]
         self.over = [False] * 3
         self.stall_sent = [False] * 3
+        self.frozen = [False] * 3            # breakdown lock: station frozen by a breakdown elsewhere
+        self.frozen_at = [0, 0, 0]
+        self.lock_mask = 0
+        self.s1_armed = True                 # gate opened since the last box reached S1
         self.gate_open = False
         self.s1_empty_since = -self.GATE_REOPEN_MS   # S1 empty at boot: the gate opens at once
         self.hold_sent = False
@@ -84,23 +88,40 @@ class SimLine:
         if open_ == self.gate_open:
             return
         self.gate_open = open_
+        if open_:
+            self.s1_armed = True
         self.ev(0, "GATE", 1 if open_ else 0)
 
     def on_in(self, i):
+        if self.frozen[i] and not (i == 0 and self.s1_armed and not self.fifo[0]):
+            return                           # sensor ignored during a breakdown lock
         self.fifo[i].append(self.ms)
         if len(self.fifo[i]) == 1:
             self.active_since[i] = self.ms
             self.over[i] = False
             self.stall_sent[i] = False
+        if self.frozen[i]:
+            self.frozen_at[i] = self.ms     # in-flight box landed on a frozen S1: clock starts paused
         if i == 0:
             self.released += 1
+            self.s1_armed = False
             self.set_gate(False)
         self.ev(i + 1, "IN", len(self.fifo[i]))
 
+    def active_ms(self, i):
+        """Same as the UNO: a frozen station's clock is stopped."""
+        return (self.frozen_at[i] if self.frozen[i] else self.ms) - self.active_since[i]
+
     def on_out(self, i):
+        if self.frozen[i]:
+            return
         ct = 0
         if self.fifo[i]:
             ct = self.ms - self.fifo[i].popleft()
+            if self.stall_sent[i] and self.fifo[i]:     # stuck box left: next box starts fresh
+                self.active_since[i] = self.ms
+                self.over[i] = False
+                self.stall_sent[i] = False
         else:
             self.ev(i + 1, "ERR", 1)
         if not self.fifo[i]:
@@ -123,16 +144,16 @@ class SimLine:
         else:
             self.hold_sent = False
         if self.gate_open:
-            if not limit_ok or not s1_free:
+            if not limit_ok or not s1_free or self.lock_mask:
                 self.set_gate(False)
-        elif limit_ok and s1_settled:
+        elif limit_ok and s1_settled and not self.lock_mask:
             self.set_gate(True)
         # buffer time -> red LED, bottleneck among the red stations, stall
         buf_ms = self.buffer_s * 1000
         bn, best = 0, -1
         for i in range(3):
             if self.fifo[i]:
-                d = self.ms - self.active_since[i]
+                d = self.active_ms(i)
                 if not self.over[i] and d > buf_ms:
                     self.over[i] = True
                 if self.over[i] and d > best:
@@ -141,9 +162,25 @@ class SimLine:
             self.bn = bn
             self.ev(0, "BN", bn)
         for i in range(3):
-            if self.fifo[i] and not self.stall_sent[i] and self.ms - self.active_since[i] > buf_ms * self.STALL_FACTOR:
+            if self.fifo[i] and not self.stall_sent[i] and self.active_ms(i) > buf_ms * self.STALL_FACTOR:
                 self.stall_sent[i] = True
-                self.ev(i + 1, "STALL", self.ms - self.active_since[i])
+                self.ev(i + 1, "STALL", self.active_ms(i))
+        # breakdown lock (copy of updateLock() in the sketch)
+        mask = sum(1 << i for i in range(3) if self.fifo[i] and self.stall_sent[i])
+        for i in range(3):
+            freeze = bool(mask) and not mask & (1 << i)
+            if freeze and not self.frozen[i]:
+                self.frozen[i], self.frozen_at[i] = True, self.ms
+            elif not freeze and self.frozen[i]:
+                shift = self.ms - self.frozen_at[i]
+                self.frozen[i] = False
+                self.active_since[i] += shift
+                self.fifo[i] = deque(t + shift for t in self.fifo[i])
+        if mask != self.lock_mask:
+            self.lock_mask = mask
+            self.ev(0, "LOCK", mask)
+            if mask:
+                self.set_gate(False)
         if self.ms - self.last_status >= self.STATUS_EVERY_MS:
             self.last_status = self.ms
             self.out({"type": "S", "ms": self.ms, "wip": self.wip(), "limit": self.limit,
@@ -175,6 +212,8 @@ class SimLine:
                 self.released = self.done = 0
                 self.fifo = [deque(), deque(), deque()]
                 self.stall_sent = [False] * 3
+                self.frozen = [False] * 3
+                self.lock_mask = 0
                 self.over = [False] * 3
                 self.s1_empty_since = self.ms - self.GATE_REOPEN_MS
                 self.bn = 0
@@ -203,6 +242,8 @@ class SimLine:
             self.finished[0] = False
             self.on_in(0)
         for i in range(3):
+            if self.frozen[i]:
+                continue          # line locked by a breakdown elsewhere: nobody moves boxes here
             # work on the box
             if self.platform[i] is not None and not self.finished[i]:
                 bd = sc.get("breakdown")

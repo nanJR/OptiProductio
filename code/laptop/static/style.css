@@ -99,6 +99,7 @@ main { padding: 22px 28px 40px; display: grid; gap: 18px; max-width: 1600px; mar
 .station { background: var(--panel-2); border: 1px solid var(--line); border-radius: 14px; padding: 14px; position: relative; transition: border-color .3s, box-shadow .3s; }
 .station.isbn { border-color: var(--bn); box-shadow: 0 0 0 1px var(--bn) inset, 0 8px 30px rgba(255,107,61,.12); }
 .station.stall { border-color: var(--down); }
+.station.frozen { opacity: 0.6; border-style: dashed; }
 .station .head { display: flex; justify-content: space-between; align-items: center; }
 .station .name { font-weight: 650; font-size: 15px; }
 .lights { display: flex; gap: 6px; }
