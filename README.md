@@ -1,7 +1,8 @@
 # OptiProductio
 
 **Arduino-Based Real-Time WIP Monitoring and Bottleneck Detection**
-IEM IDEA Lab EL project (topic: Smart Production Workflow and Resource Optimization System).
+
+IDEA Lab EL project, IEM, batch 2. EL topic: Smart Production Workflow and Resource Optimization System.
 
 OptiProductio is a tabletop production line with three hand-operated stations (S1, S2, S3). An Arduino UNO reads six IR sensors (one at the entry and one at the exit of each station), so it knows how many boxes are inside the line (WIP: work in progress) and how long each station holds each box (cycle time). A servo gate at the chute lets one box onto S1 at a time: it opens when S1 is empty and closes as soon as a box arrives. An optional WIP limit adds CONWIP (constant WIP: the gate also waits until fewer than n boxes are inside the line). Each station has a user-set buffer time (seconds, saved in EEPROM): its green LED is steady when empty, blinks while a box is worked on, and its red LED turns steady once the station has been busy longer than the buffer time. Among those red stations the UNO names the bottleneck with Roser's active-period method. A NodeMCU ESP8266 sends every event over Wi-Fi as MQTT messages (ISA-95 style topics) to a Mosquitto broker on a laptop, where a Python program stores them in an SQLite historian and serves a live dashboard with ISO 22400 KPI names, a timeline, a downtime Pareto and a run report for comparing WIP limits.
 
@@ -10,6 +11,7 @@ This is a student prototype.
 ## Start here
 | You want to | Read |
 |---|---|
+| Start the line on demo day (one-click `code/START_OptiProductio.bat`) | [docs/phase2/STARTUP.md](docs/phase2/STARTUP.md) |
 | Set up and run everything, step by step | [docs/phase2/SETUP_AND_RUN.md](docs/phase2/SETUP_AND_RUN.md) |
 | Wire the hardware | [docs/phase2/WIRING.md](docs/phase2/WIRING.md) and `docs/phase2/wiring_diagram.png` |
 | Test without hardware, then with it | [docs/phase2/TEST_CHECKLIST.md](docs/phase2/TEST_CHECKLIST.md) |
@@ -39,8 +41,12 @@ code/
     tests/                    automatic tests (python -m pytest -q)
   legacy_phase1/              the Phase 1 sketch and Streamlit dashboard (kept for reference)
 docs/
-  phase2/                     setup guide, wiring, test checklist, how it works
-  phase1/ brief/ plans/ research/   earlier decks, brief, roadmap and research
+  EL_Workflow_and_Requirements.md   our EL rules, rubric and steps
+  phase2/                           startup guide, setup guide, wiring, test checklist, how it works
+  phase1/                           Phase I decks with preview PDFs (latest: IDEA_LAB_Phase-I v3, team and method deck v7, Phase I deck v4) and build scripts
+  brief/                            teammate project brief (latest v3) and the 3D demo-day views
+  plans/                            growth roadmap (latest v2, parked as future enhancement)
+  research/                         research reports (latest: industry report v4, WIP research v2) and the notes behind them
 ```
 
 ## Hardware
