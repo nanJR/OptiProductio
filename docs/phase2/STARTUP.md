@@ -12,7 +12,7 @@ ELI5: starting the line is like opening a shop in the morning. First the electri
 
 | # | What | How | Check |
 |---|---|---|---|
-| 0.1 | Get the latest code | GitHub > nanJR/OptiProductio > green **Code** > **Download ZIP**, unzip. Or `git pull` in an existing clone. | `code\firmware\uno_line_controller\uno_line_controller.ino` says `v3.2` near the end. The script warns you if not. |
+| 0.1 | Get the latest code | GitHub > nanJR/OptiProductio > green **Code** > **Download ZIP**, unzip. Or `git pull` in an existing clone. | `code\firmware\uno_line_controller\uno_line_controller.ino` says `v3.3` near the end. The script warns you if not. |
 | 0.2 | Python 3.11+ | python.org. Tick **"Add python.exe to PATH"**. | `py --version` in Command Prompt |
 | 0.3 | Python packages | Done by the script on first run. By hand: see Part 3. | script prints `[OK] Python environment ready` |
 | 0.4 | Arduino IDE 2.x | arduino.cc | opens |
@@ -40,7 +40,7 @@ Why: the Windows Mosquitto service only listens to the laptop itself, so the Nod
 1. Plug the UNO in by USB. Open `code\firmware\uno_line_controller\uno_line_controller.ino`.
 2. Tools > Board > **Arduino Uno**. Tools > Port > the CH340 COM port.
 3. Click **Verify** (✓), then **Upload** (→).
-4. **Check:** LEDs all flash once, buzzer chirps, gate opens once, all three stations show **green steady**. Serial Monitor (115200 baud, line ending **Newline**) shows `# OptiProductio UNO line controller v3.2`.
+4. **Check:** LEDs all flash once, buzzer chirps, gate opens once, all three stations show **green steady**. Serial Monitor (115200 baud, line ending **Newline**) shows `# OptiProductio UNO line controller v3.3`.
 
 ### 1.2 NodeMCU (Wi-Fi gateway), only for Wi-Fi mode
 1. Turn on the phone hotspot on **2.4 GHz**. Connect the laptop to it.
@@ -153,7 +153,7 @@ Ctrl+C in the dashboard window, close the Mosquitto window, unplug the servo sup
 | Symptom | Fix |
 |---|---|
 | Script says Python not found | Install Python with "Add to PATH" ticked, reopen the script |
-| `[!] sketch is NOT v3.2` | Download the ZIP again from GitHub main |
+| `[!] sketch is NOT v3.3` | Download the ZIP again from GitHub main |
 | "Access is denied" on COM port | Close the Arduino Serial Monitor |
 | Dashboard "no data" in Wi-Fi mode | Mosquitto window open? NodeMCU LED solid? `MQTT_HOST` = today's laptop IP? Option 7 done? If in doubt, switch to option 2 (USB): same data, 30 seconds |
 | NodeMCU `MQTT failed, state -2` | wrong IP, firewall, or laptop on another Wi-Fi |
