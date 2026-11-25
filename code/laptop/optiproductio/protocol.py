@@ -87,12 +87,16 @@ def from_mqtt(topic: str, payload: bytes | str, root: str) -> dict | None:
 
 def command_to_mqtt(cmd: str, root: str) -> tuple[str, str]:
     """'L,4' -> ('<root>/cmd/wip_limit', '4'); 'B,15' -> ('<root>/cmd/buffer', '15');
+    'B,2,15' -> ('<root>/cmd/buffer', '20015') (station 2 only; the UNO splits it);
     'R' -> reset; 'P' -> ping."""
     c = cmd.strip().upper()
     if c.startswith("L"):
         return f"{root}/cmd/wip_limit", str(int(c[2:]))
     if c.startswith("B"):
-        return f"{root}/cmd/buffer", str(int(c[2:]))
+        parts = [int(x) for x in c[2:].split(",") if x.strip()]
+        if len(parts) == 2:              # B,<station>,<s> -> one number the gateway passes on as is
+            return f"{root}/cmd/buffer", str(parts[0] * 10000 + parts[1])
+        return f"{root}/cmd/buffer", str(parts[0])
     if c == "R":
         return f"{root}/cmd/reset", "1"
     return f"{root}/cmd/ping", "1"

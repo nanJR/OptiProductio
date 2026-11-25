@@ -31,6 +31,7 @@ DEFAULT_CFG = {
     "ideal_ct_s": 6.0,       # PRI: planned run time per item (design cycle time of the line)
     "down_after_s": 18.0,    # no part out of S3 for this long = line is DOWN (Vorne-style)
     "buffer_s": 10.0,        # fallback buffer time if no BUF event / status has arrived yet
+    "buffers_s": None,       # fallback per-station buffers [S1, S2, S3] (engine fills it in)
     "timeline_s": 600,       # how much history the timeline chart shows
 }
 
@@ -173,6 +174,15 @@ def _down_intervals(out_times, t0, t1, ideal_ms, down_ms):
     return [d for d in (_clip(a, b, t0, t1) for a, b in downs) if d]
 
 
+def _apply_buf(bufs, e):
+    """BUF event: station 1..3 = that station's buffer (firmware v3.2); station 0 = all (older firmware)."""
+    v = float(e["val"])
+    if 1 <= e["st"] <= 3:
+        bufs[e["st"] - 1] = v
+    else:
+        bufs[:] = [v, v, v]
+
+
 def _down_reason(a, b, periods, stall_ms):
     """Why was the line down between a and b? Look at what the stations were doing."""
     span = b - a
@@ -186,7 +196,7 @@ def _down_reason(a, b, periods, stall_ms):
     s = max(range(3), key=lambda i: busy[i])
     if busy[s] < 0.25 * span:
         return "Starved: no box at S1 (chute empty or gate held)"
-    if longest[s] >= stall_ms:
+    if longest[s] >= stall_ms[s]:
         return f"Breakdown suspected at S{s + 1}"
     return f"Slow station S{s + 1}"
 
@@ -201,13 +211,17 @@ def compute(events, init, session_start, t0, t1, cfg=None):
     pbt = t1 - t0
 
     events = [e for e in events if e["ms"] <= t1]
-    # buffer time in force at t1: the last BUF event from the UNO, else the fallback
-    buf_ev = [e["val"] for e in events if e["ev"] == "BUF"]
-    buffer_s = float(buf_ev[-1]) if buf_ev else float(c["buffer_s"])
-    c["buffer_s"] = buffer_s
-    c["stall_s"] = 2 * buffer_s          # same rule as the UNO: STALL after 2 x buffer
-    buffer_ms = buffer_s * 1000
-    stall_ms = c["stall_s"] * 1000
+    # buffer time of each station in force at t1: the BUF events from the UNO, else the fallback
+    start_bufs = [float(x) for x in c["buffers_s"]] if c.get("buffers_s") else [float(c["buffer_s"])] * 3
+    bufs = list(start_bufs)
+    for e in events:
+        if e["ev"] == "BUF":
+            _apply_buf(bufs, e)
+    c["buffers_s"] = bufs
+    c["buffer_s"] = bufs[0]
+    c["stall_s"] = [2 * b for b in bufs]   # same rule as the UNO: STALL after 2 x that station's buffer
+    buffer_ms = [b * 1000 for b in bufs]
+    stall_ms = [2 * b * 1000 for b in bufs]
     periods, occ_now = _station_periods(events, init, session_start, t1)
 
     # --- counts, cycle times, lead times, WIP curve ---
@@ -229,14 +243,11 @@ def compute(events, init, session_start, t0, t1, cfg=None):
     on_st = [deque(), deque(), deque()]
     between = [None, deque(), deque()]                      # index 1: S1->S2, index 2: S2->S3
     breakdown_parts = 0
-    buf_at = float(c["buffer_s"])
-    first_buf = next((e["val"] for e in events if e["ev"] == "BUF"), None)
-    if first_buf is not None:
-        buf_at = float(first_buf)
+    buf_at = list(start_bufs)
     for e in events:
         ms, s, ev = e["ms"], e["st"], e["ev"]
         if ev == "BUF":
-            buf_at = float(e["val"])
+            _apply_buf(buf_at, e)
         elif ev == "STALL" and 1 <= s <= 3:
             # the UNO declared a breakdown at this station: the box at the front of its queue
             # is the stuck one. Mark it now, whatever its own cycle time turns out to be.
@@ -249,7 +260,7 @@ def compute(events, init, session_start, t0, t1, cfg=None):
             on_st[s - 1].append(q.popleft() if q else False)
         elif ev == "OUT" and 1 <= s <= 3:
             bad = on_st[s - 1].popleft() if on_st[s - 1] else (between[s - 1].popleft() if s > 1 and between[s - 1] else False)
-            if e["val"] > 2 * buf_at * 1000:      # stayed past 2 x buffer = declared broken while on it
+            if e["val"] > 2 * buf_at[s - 1] * 1000:   # stayed past 2 x this station's buffer = broken
                 bad = True
             if s < 3:
                 between[s].append(bad)
@@ -347,7 +358,7 @@ def compute(events, init, session_start, t0, t1, cfg=None):
         ongoing = periods[s][-1] if periods[s] and periods[s][-1][2] else None
         # same clock as the UNO: time frozen by a breakdown elsewhere does not count
         active_now_ms = (t1 - ongoing[0] - _frozen_ms(locks, s, ongoing[0], t1)) if ongoing else 0
-        over = bool(ongoing and active_now_ms > buffer_ms)
+        over = bool(ongoing and active_now_ms > buffer_ms[s])
         ct = cycle[s]
         stations.append({
             "st": s + 1,
@@ -365,7 +376,8 @@ def compute(events, init, session_start, t0, t1, cfg=None):
             "over_buffer": over,
             # the LEDs on the table: green steady = empty, blink = WIP inside buffer, red = over buffer
             "led": "red" if over else ("blink" if ongoing else "green"),
-            "stalled": bool(ongoing and active_now_ms >= stall_ms),
+            "buffer_s": bufs[s],
+            "stalled": bool(ongoing and active_now_ms >= stall_ms[s]),
             "frozen": bool(lock_now and not lock_now & (1 << s)),
             "sole_pct": 100 * rz["sole_ms"][s] / pbt if pbt > 0 else 0,
             "shift_pct": 100 * rz["shift_ms"][s] / pbt if pbt > 0 else 0,
@@ -415,7 +427,7 @@ def compute(events, init, session_start, t0, t1, cfg=None):
         {"sym": "APT", "name": "Actual production time", "formula": "PBT - ADOT", "value": apt / 1000, "unit": "s"},
         {"sym": "PQ", "name": "Produced quantity", "formula": "boxes out of S3", "value": produced, "unit": "pcs"},
         {"sym": "SQ", "name": "Scrap quantity", "formula": "boxes marked scrap by the operator", "value": scrap, "unit": "pcs"},
-        {"sym": "BDQ", "name": "Breakdown parts", "formula": "boxes out of S3 that stayed on any station > 2 x buffer (%.0f s)" % c["stall_s"], "value": breakdown_parts, "unit": "pcs"},
+        {"sym": "BDQ", "name": "Breakdown parts", "formula": "boxes out of S3 that stayed on any station > 2 x its buffer (S1 %.0f s, S2 %.0f s, S3 %.0f s)" % tuple(c["stall_s"]), "value": breakdown_parts, "unit": "pcs"},
         {"sym": "GQ", "name": "Good quantity", "formula": "PQ - SQ - BDQ", "value": good, "unit": "pcs"},
         {"sym": "PRI", "name": "Planned run time per item", "formula": "set in Settings", "value": c["ideal_ct_s"], "unit": "s"},
         {"sym": "A", "name": "Availability", "formula": "APT / PBT", "value": pct(A), "unit": "%"},

@@ -302,3 +302,35 @@ def test_stall_event_marks_the_stuck_box_even_if_its_own_cycle_is_short():
           E(15000, 3, "IN", 1), E(16000, 3, "OUT", 1000), E(17000, 3, "IN", 1), E(18000, 3, "OUT", 1000)]
     k = analytics.compute(ev, {"occ": [0, 0, 0]}, 0, 0, 20_000)
     assert k["produced"] == 2 and k["breakdown_parts"] == 1 and k["good"] == 1
+
+
+# ---------- new in v3.2: one buffer time per station ----------
+def test_per_station_buffer_command_and_mqtt_form():
+    root = "rvce/idealab/line1"
+    assert protocol.command_to_mqtt("B,2,15", root) == (root + "/cmd/buffer", "20015")
+    assert protocol.command_to_mqtt("B,15", root) == (root + "/cmd/buffer", "15")
+    eng, sim = make("normal", 0, 10)
+    sim.run_for(5_000)
+    eng.set_buffer(25, 2)
+    sim.run_for(1_500)
+    assert sim.buffers == [10, 25, 10]
+    sim.command("B,30007")                     # what the NodeMCU passes on for S3 = 7 s
+    sim.run_for(1_500)
+    eng._cache = (0, None)
+    k = eng.snapshot()["kpi"]
+    assert k["cfg"]["buffers_s"] == [10, 25, 7]
+    assert [s["buffer_s"] for s in k["stations"]] == [10, 25, 7]
+
+
+def test_each_station_turns_red_on_its_own_buffer():
+    def E(ms, st, ev, val):
+        return {"ms": ms, "st": st, "ev": ev, "val": val, "seq": 0}
+    ev = [E(0, 1, "BUF", 4), E(0, 2, "BUF", 20), E(0, 3, "BUF", 6),
+          E(1000, 1, "IN", 1), E(1000, 2, "IN", 1), E(1000, 3, "IN", 1)]
+    k = analytics.compute(ev, {"occ": [0, 0, 0]}, 0, 0, 9_000)     # all busy for 8 s
+    assert [s["led"] for s in k["stations"]] == ["red", "blink", "red"]
+    assert [s["stalled"] for s in k["stations"]] == [True, False, False]   # S1: 8 s >= 2 x 4 s
+    assert k["bn_list"] == [1, 3]
+    # old firmware: one BUF on station 0 still means all stations
+    k2 = analytics.compute([E(0, 0, "BUF", 5)] + ev[3:], {"occ": [0, 0, 0]}, 0, 0, 9_000)
+    assert k2["cfg"]["buffers_s"] == [5.0, 5.0, 5.0]

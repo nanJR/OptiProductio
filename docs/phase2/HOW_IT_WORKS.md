@@ -32,13 +32,13 @@ Each idea has three parts: the plain-English picture, what the code actually doe
 
 ## 3b. Buffer time and the station LEDs (andon lights)
 **Picture:** a pizza oven timer. A pizza that is still inside its 10 minutes is fine; only after the timer runs out do you shout. A thin-crust shop sets 5 minutes, a deep-dish shop 15. Same rule, different number.
-**Code:** the buffer time is a user setting in seconds (default 10 s, range 1 to 3600 s). Set it in the Arduino Serial Monitor (115200 baud, "Newline", type `B,15`), or from the dashboard ("Buffer time and gate control" card), or over MQTT `.../cmd/buffer`. The UNO saves it in EEPROM and confirms with a `BUF` event.
+**Code (firmware v3.2):** each station has its **own** buffer time in seconds (default 10 s, range 1 to 3600 s), because each station does a different job. Set them in the Arduino Serial Monitor (115200 baud, "Newline"): `B,15` = all stations 15 s, `B,2,20` = only S2 20 s. Or from the dashboard ("Buffer time and gate control" card: pick All stations / S1 / S2 / S3, then Apply), or over MQTT `.../cmd/buffer` (payload `15` = all, `20020` = station 2 at 20 s, i.e. station × 10000 + seconds, so the NodeMCU passes it on unchanged and needs no re-flash). The UNO saves all three in EEPROM and confirms with one `BUF` event per station (`E,...,2,BUF,20`).
 | LED on the station | Meaning |
 |---|---|
 | green steady | station empty (for S1 this is also when the gate may open) |
 | green blinking | box on the station, WIP (work in progress) within the buffer time |
 | red steady | station busy without a break for longer than the buffer time: bottleneck |
-- One short beep when a station turns red. If a station stays busy for 2 × the buffer time the UNO sends `STALL` (suspected breakdown) with a triple beep; the LED stays red steady.
+- One short beep when a station turns red. If a station stays busy for 2 × **its own** buffer time the UNO sends `STALL` (suspected breakdown) with a triple beep; the LED stays red steady.
 - "Busy" is measured as the current active period (next section), so a station with a queue of boxes that never empties also turns red.
 **Viva wording:** "The buffer time is a configurable tolerance on the active-period length before a station is flagged; it is stored in EEPROM and set through the serial command interface or MQTT."
 

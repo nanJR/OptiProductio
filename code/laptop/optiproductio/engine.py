@@ -39,6 +39,7 @@ class Engine:
         self.lost = 0
         self.pending_limit = None
         self.pending_buffer = None
+        self.need_query = False          # joined mid-run: ask the UNO (P) for its 3 buffers
         self._cache = (0, None)
         self._run_cache = {}
 
@@ -63,6 +64,7 @@ class Engine:
                     return                            # joined mid-run: wait for a status line
                 self._open_session(m["ms"], {"occ": m["occ"], "released": m["released"],
                                              "done": m["done"]}, m["limit"])
+                self.need_query = True                # sent from snapshot(), outside this callback
 
             if m["type"] == "E":
                 self.hist.add_event(self.session_id, m, self.source.kind)
@@ -117,12 +119,15 @@ class Engine:
         self.hist.add_command(f"L,{n}")
         self.source.send(f"L,{n}")      # the run changes when the UNO confirms with a LIMIT event
 
-    def set_buffer(self, s: int):
-        """Buffer time in seconds: how long a station may stay busy before its LED turns red."""
+    def set_buffer(self, s: int, station: int = 0):
+        """Buffer time in seconds: how long a station may stay busy before its LED turns red.
+        station 1..3 = only that station, 0 = all three."""
         s = max(1, min(3600, int(s)))
-        self.pending_buffer = s
-        self.hist.add_command(f"B,{s}")
-        self.source.send(f"B,{s}")      # the UNO saves it in EEPROM and answers with a BUF event
+        station = int(station) if int(station) in (1, 2, 3) else 0
+        self.pending_buffer = {"station": station, "s": s}
+        cmd = f"B,{station},{s}" if station else f"B,{s}"
+        self.hist.add_command(cmd)
+        self.source.send(cmd)           # the UNO saves it in EEPROM and answers with BUF events
 
     def reset_line(self):
         self.hist.add_command("R")
@@ -165,6 +170,7 @@ class Engine:
         cfg = dict(self.cfg)
         if self.status and self.status.get("buf") is not None:
             cfg["buffer_s"] = self.status["buf"]   # used only if no BUF event is in the history
+            cfg["buffers_s"] = None
         return analytics.compute(ev, sess["init"], sess["start_ms"], run["start_ms"], t1, cfg)
 
     def snapshot(self):
@@ -172,6 +178,9 @@ class Engine:
             now = time.time()
             if self._cache[1] is not None and now - self._cache[0] < 0.7:
                 return self._cache[1]
+            if self.need_query:
+                self.need_query = False
+                self.source.send("P")         # the UNO answers with PONG + its three BUF events
             snap = {"title": "Arduino-Based Real-Time WIP Monitoring and Bottleneck Detection",
                     "project": "OptiProductio", "source": self.source.describe(),
                     "lost_lines": self.lost, "pending_limit": self.pending_limit,

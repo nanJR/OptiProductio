@@ -89,7 +89,9 @@
 
     <div class="card">
       <h2>Buffer time and gate control</h2>
-      <p class="hint">Buffer time: how long a station may stay busy before its LED turns red and it is called the bottleneck. Set it to suit the product (a longer job needs a longer buffer). The UNO saves it in EEPROM.</p>
+      <p class="hint">Buffer time: how long a station may stay busy before its LED turns red and it is called the bottleneck. Each station has its own buffer, because each does a different job (a longer job needs a longer buffer). Twice the buffer = suspected breakdown. The UNO saves all three in EEPROM.</p>
+      <div class="presets" id="bufStations"></div>
+      <div class="note" id="bufNow" style="margin:-6px 0 12px">Now: -</div>
       <div class="limit-row">
         <button class="btn stepper" id="bufMinus">-</button>
         <div class="limit-val num" id="bufVal">10</div>
@@ -98,7 +100,7 @@
         <button class="btn primary" id="bufApply">Apply buffer</button>
       </div>
       <div class="presets" id="bufPresets"></div>
-      <div class="note" id="bufNote">Also settable in the Arduino Serial Monitor: type B,15 for 15 s.</div>
+      <div class="note" id="bufNote">Also settable in the Arduino Serial Monitor: B,15 = all stations 15 s, B,2,15 = only S2 15 s.</div>
       <p class="hint" style="margin-top:14px">Gate: opens when S1 is empty (S1 green steady), closes as soon as a box reaches S1. WIP limit "Off" = only this rule. A limit n &gt; 0 switches on CONWIP (constant work in progress): the gate also waits until the line holds fewer than n boxes.</p>
       <div class="limit-row">
         <button class="btn stepper" id="limMinus">-</button>
