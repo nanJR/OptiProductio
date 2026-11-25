@@ -1,0 +1,431 @@
+<!doctype html><html><head><meta charset='utf-8'><title>OptiProductio assembly and setup manual</title><style>
+@page { size: A4; margin: 0; }
+* { box-sizing: border-box; }
+body { margin: 0; font-family: 'Segoe UI', Arial, Helvetica, sans-serif; color: #0f172a; font-size: 9.6pt; line-height: 1.38; }
+.page { width: 210mm; height: 297mm; padding: 11mm 12mm 8mm; position: relative; page-break-after: always; display: flex; flex-direction: column; overflow: hidden; }
+.hdr { display: flex; justify-content: space-between; border-bottom: 2px solid #0f766e; padding-bottom: 3px; margin-bottom: 6px; font-size: 8pt; color: #475569; }
+.hdr b { color: #0f766e; }
+h2 { font-size: 15pt; margin: 2px 0 8px; color: #0f172a; }
+h3 { font-size: 10.5pt; margin: 8px 0 4px; color: #0f766e; }
+p { margin: 3px 0 6px; }
+.content { flex: 1 1 auto; min-height: 0; }
+.twocol { display: grid; grid-template-columns: 1fr 1fr; gap: 9mm; }
+ol.steps { padding-left: 18px; margin: 3px 0 6px; } ol.steps li { margin-bottom: 3px; }
+ol.rules li { margin-bottom: 3px; } ol.toc { padding-left: 20px; } ol.toc li { margin-bottom: 1px; }
+ul { padding-left: 16px; margin: 3px 0 6px; } ul li { margin-bottom: 2px; }
+ul.check { list-style: none; padding-left: 2px; } ul.check li::before { content: "☐  "; }
+table { border-collapse: collapse; width: 100%; margin: 4px 0 7px; }
+th { background: #0f766e; color: #fff; text-align: left; font-weight: 600; padding: 3px 5px; font-size: 8.6pt; }
+td { border-bottom: 1px solid #e2e8f0; padding: 3px 5px; vertical-align: top; }
+table.small td, table.small th { font-size: 8.2pt; padding: 2px 4px; }
+.eli5 { background: #f1f5f9; border-left: 4px solid #64748b; padding: 5px 8px; margin: 6px 0; border-radius: 4px; font-size: 9pt; }
+.eli5 b { display: inline-block; background: #64748b; color: #fff; padding: 0 5px; border-radius: 3px; margin-right: 5px; font-size: 7.5pt; }
+.warn { background: #fef2f2; border-left: 4px solid #dc2626; padding: 5px 8px; margin: 6px 0; border-radius: 4px; font-size: 9pt; }
+.warn b { color: #b91c1c; margin-right: 4px; }
+.stopcheck { background: #ecfdf5; border: 1.5px solid #059669; padding: 5px 8px; margin: 6px 0; border-radius: 5px; font-size: 9pt; }
+.stopcheck b { color: #047857; margin-right: 4px; display: block; font-size: 8pt; letter-spacing: .5px; }
+code, .mono { font-family: Consolas, 'Courier New', monospace; font-size: 8.4pt; background: #f1f5f9; padding: 0 3px; border-radius: 3px; }
+.mono { display: block; padding: 5px 7px; margin: 5px 0; line-height: 1.5; }
+img.full { width: 100%; border-radius: 6px; border: 1px solid #e2e8f0; margin: 4px 0 8px; }
+img.half { width: 48%; border-radius: 6px; border: 1px solid #e2e8f0; }
+img.right { float: right; margin: 0 0 6px 10px; }
+img.dash { width: 100%; height: 125mm; object-fit: cover; object-position: top; border-radius: 6px; border: 1px solid #e2e8f0; }
+.clear { clear: both; }
+img.rot { display: block; height: 218mm; margin: 0 auto 4px; border: 1px solid #e2e8f0; border-radius: 6px; }
+.twocol > div { min-width: 0; }
+code { word-break: break-all; }
+svg.layout { width: 100%; margin-bottom: 6px; }
+.small { font-size: 8.4pt; color: #475569; }
+.tightlist li { margin-bottom: 4px; }
+.gloss { border-top: 1.5px solid #94a3b8; padding-top: 4px; margin-top: 6px; font-size: 7.7pt; color: #334155; column-count: 2; column-gap: 8mm; flex: 0 0 auto; }
+.gloss .gt { font-weight: 700; font-size: 7.7pt; color: #0f766e; column-span: all; margin-bottom: 2px; letter-spacing: .5px; }
+.gloss div { break-inside: avoid; margin-bottom: 1.5px; }
+.foot { font-size: 7.5pt; color: #94a3b8; display: flex; justify-content: space-between; margin-top: 3px; flex: 0 0 auto; }
+.cover .kicker { color: #0f766e; font-weight: 700; letter-spacing: 1px; font-size: 9pt; margin-top: 6mm; }
+.cover .ctitle { font-size: 24pt; line-height: 1.15; margin: 4px 0 6px; }
+.cover .csub { font-size: 12pt; color: #475569; margin-bottom: 8px; }
+</style></head><body>
+<section class="page"><div class="content">
+<div class="cover">
+  <div class="kicker">IEM IDEA Lab EL · Phase 2 · OptiProductio</div>
+  <h1 class="ctitle">Arduino-Based Real-Time WIP Monitoring and Bottleneck Detection</h1>
+  <div class="csub">Assembly and setup manual: build the table, wire it, flash it, calibrate it, run the demo</div>
+  <img src="img/topview.jpg" class="full">
+  <div class="twocol">
+   <div>
+    <h3>What you are building</h3>
+    <p>A tabletop production line. Boxes slide down a chute, a servo gate lets them in one at a time, and three people work at stations S1, S2 and S3. Six IR sensors watch every box enter and leave every station. The Arduino UNO keeps the WIP count, opens the gate only when S1 is empty (and, with a WIP limit set, only while WIP is below it), and turns a station's LED red once it has been busy longer than the buffer time you set. A NodeMCU sends everything over Wi-Fi to the laptop, which stores it and shows a live dashboard.</p>
+   </div>
+   <div>
+    <h3>How to use this manual</h3>
+    <p>Go page by page. Every block ends with a <b>CHECK</b>. Do not start the next block until the check passes: a fault found early takes 2 minutes to fix, a fault found at the end takes 2 hours.</p>
+    <p>Grey <b>ELI5</b> boxes explain the idea in plain words. The glossary at the bottom of each page explains the terms used on that page.</p>
+   </div>
+  </div>
+</div></div>
+<div class="gloss"><div class="gt">GLOSSARY FOR THIS PAGE</div><div><b>WIP:</b> Work in progress: boxes that have entered the line (passed S1 IN) but not yet left it (passed S3 OUT).</div><div><b>S1/S2/S3:</b> Station 1, Station 2, Station 3.</div><div><b>Bottleneck:</b> The station that limits how fast the whole line can produce.</div><div><b>IIoT:</b> Industrial Internet of Things: factory machines sending data over a network.</div></div>
+<div class="foot"><span>IEM IDEA Lab EL · Phase 2 · manual v2 · 24 Nov 2026</span><span>page 1 of 21</span></div></section>
+<section class="page"><div class="hdr"><span><b>OptiProductio</b> · assembly and setup manual</span><span>Arduino-Based Real-Time WIP Monitoring and Bottleneck Detection</span></div><div class="content"><h2>Contents and the 3-day plan</h2>
+<div class="twocol">
+<div>
+<h3>Contents</h3>
+<ol class="toc">
+<li>Safety and golden rules</li><li>Parts check (receipt)</li><li>Tools and who does what</li>
+<li>Build 1: base board and layout</li><li>Build 2: chute and servo gate</li><li>Build 3: stations, sensor mounts, LED panel</li>
+<li>Wire 1: breadboard, power, UNO</li><li>Wire 2: six IR sensors</li><li>Wire 3: LEDs and buzzer</li>
+<li>Wire 4: servo and its own 5 V supply</li><li>Wire 5: NodeMCU link</li><li>Full wiring diagram</li>
+<li>Software 1: Arduino IDE, drivers, flashing</li><li>Calibration: sensors, gate, chute</li>
+<li>Software 2: laptop, Mosquitto, hotspot, gateway</li><li>First power-on and self-test</li>
+<li>Using the dashboard</li><li>Demo-day script</li><li>Troubleshooting</li><li>Quick reference card</li>
+</ol>
+</div>
+<div>
+<h3>Plan (eval Thursday 26 Nov)</h3>
+<table class="tight"><tr><th>Day</th><th>Goal</th><th>Done when</th></tr><tr><td>Tue 24</td><td>Build the table (Build 1-3). Wire and test blocks 1-4. Laptop software installed, simulator running.</td><td>Hardware test sketch passes sensors, LEDs, gate, buzzer</td></tr><tr><td>Wed 25</td><td>NodeMCU (Wire 5, Software 2). Calibrate. Full line runs over MQTT. Two full rehearsals. Record a backup video.</td><td>Self-test sheet all ticked; A/B run report saved</td></tr><tr><td>Thu 26</td><td>Set up 45 min early. Self-test. Demo.</td><td>Demo done</td></tr></table>
+<div class="eli5"><b>ELI5</b> Build a house room by room and switch each room's lights on before you start the next room. Then when something does not work, you know which room to look in.</div>
+<h3>Files you need</h3>
+<p>Everything is in the GitHub repo <b>nanJR/OptiProductio</b> (branch with Phase 2 code) and in the shared folder <code>optiproductio/code/</code>:</p>
+<table class="tight"><tr><th>Folder</th><th>What</th></tr><tr><td>firmware/uno_hardware_test</td><td>test sketch, flash this first</td></tr><tr><td>firmware/uno_line_controller</td><td>the real UNO program</td></tr><tr><td>firmware/nodemcu_gateway</td><td>Wi-Fi gateway + config.h</td></tr><tr><td>laptop/</td><td>Python server, simulator, dashboard</td></tr><tr><td>docs/</td><td>wiring diagram, test checklist, how it works</td></tr></table>
+</div></div></div>
+<div class="gloss"><div class="gt">GLOSSARY FOR THIS PAGE</div><div><b>Flash (verb):</b> Upload a program (sketch) to a board.</div><div><b>Sketch:</b> An Arduino program (.ino file).</div><div><b>Simulator:</b> Software that pretends to be the UNO and the line, for practice without hardware.</div><div><b>A/B test:</b> Running the same line twice with one change (e.g. WIP limit off vs 3) and comparing the results.</div></div>
+<div class="foot"><span>IEM IDEA Lab EL · Phase 2 · manual v2 · 24 Nov 2026</span><span>page 2 of 21</span></div></section>
+<section class="page"><div class="hdr"><span><b>OptiProductio</b> · assembly and setup manual</span><span>Arduino-Based Real-Time WIP Monitoring and Bottleneck Detection</span></div><div class="content"><h2>1. Safety and golden rules · 2. Parts check</h2>
+<div class="twocol"><div>
+<h3>Golden rules</h3>
+<ol class="rules">
+<li><b>Unplug everything</b> (USB and the servo adapter) before moving any wire.</li>
+<li><b>All GNDs join together</b>: UNO GND, NodeMCU GND, servo adapter minus, every sensor GND.</li>
+<li><b>Servo power never comes from the UNO 5V pin.</b> It comes from the 5 V 2 A adapter.</li>
+<li><b>Never put 5 V into a NodeMCU pin.</b> UNO to NodeMCU goes through the 1 kΩ / 2.2 kΩ divider.</li>
+<li><b>Capacitor polarity</b>: long leg +, striped leg -. Backwards, it can pop.</li>
+<li><b>LED polarity</b>: long leg + (towards the resistor and the UNO pin), short leg to GND.</li>
+<li><b>Hot glue gun and cutter</b>: one person uses it at a time, on a cutting mat, gun on its stand.</li>
+<li>Test each block before the next (the CHECK boxes).</li>
+</ol>
+<div class="eli5"><b>ELI5</b> GND is the 'sea level' that every board measures height from. If two boards have different sea levels, a 5 V signal from one can look like 2 V or 8 V to the other. Joining all GNDs gives everyone the same sea level.</div>
+</div><div>
+<h3>Parts check (tick against the receipt)</h3>
+<table class="tight small"><tr><th>✓</th><th>Part</th><th>Qty</th><th>Used for</th></tr><tr><td>☐</td><td>Arduino UNO (CH340) + USB cable</td><td>1</td><td>line controller</td></tr><tr><td>☐</td><td>FC-51 IR obstacle sensor</td><td>6</td><td>IN + OUT at S1, S2, S3</td></tr><tr><td>☐</td><td>SG90 micro servo + horns + screws</td><td>1</td><td>chute gate</td></tr><tr><td>☐</td><td>NodeMCU ESP8266 (CP2102)</td><td>1</td><td>Wi-Fi gateway</td></tr><tr><td>☐</td><td>5 mm LEDs red / green</td><td>10</td><td>6 used (3 + 3), 4 spare</td></tr><tr><td>☐</td><td>Resistor 220 Ω</td><td>5</td><td>5 LEDs</td></tr><tr><td>☐</td><td>Resistor 1 kΩ</td><td>5</td><td>6th LED (S3 green) + divider top</td></tr><tr><td>☐</td><td>Resistor 2.2 kΩ</td><td>5</td><td>divider bottom</td></tr><tr><td>☐</td><td>Active buzzer 5 V</td><td>1</td><td>audible alarm</td></tr><tr><td>☐</td><td>470 µF 16 V capacitor</td><td>1</td><td>servo supply buffer</td></tr><tr><td>☐</td><td>Breadboard 400 points</td><td>1</td><td>power rails + resistors</td></tr><tr><td>☐</td><td>Jumpers M-M and M-F</td><td>2 sets</td><td>all connections</td></tr><tr><td>☐</td><td>5 V 2 A adapter</td><td>1</td><td>servo power only</td></tr><tr><td>☐</td><td>Micro-USB cable</td><td>1</td><td>NodeMCU</td></tr><tr><td>☐</td><td>Foam board, popsicle sticks, glue, tape</td><td>set</td><td>table build</td></tr><tr><td>☐</td><td>8-10 light-coloured boxes about 6 cm</td><td>8-10</td><td>the 'products'</td></tr></table>
+<p class="small">Resistor colour bands: 220 Ω = red red brown, 1 kΩ = brown black red, 2.2 kΩ = red red red (gold 4th band). Or measure with a multimeter.</p>
+</div></div></div>
+<div class="gloss"><div class="gt">GLOSSARY FOR THIS PAGE</div><div><b>Common GND:</b> All grounds wired together so every board measures voltage from the same zero.</div><div><b>Polarity:</b> Which side is + and which is -. Wrong polarity can damage parts.</div><div><b>Electrolytic capacitor:</b> A capacitor with + and - legs; the stripe marks the - leg. Here 470 uF stores charge for the servo.</div><div><b>Rail (breadboard):</b> The long red (+) and blue (-) strips along a breadboard&#x27;s edges, used to share power and ground.</div><div><b>Multimeter:</b> Meter for voltage, resistance and continuity (beep test).</div></div>
+<div class="foot"><span>IEM IDEA Lab EL · Phase 2 · manual v2 · 24 Nov 2026</span><span>page 3 of 21</span></div></section>
+<section class="page"><div class="hdr"><span><b>OptiProductio</b> · assembly and setup manual</span><span>Arduino-Based Real-Time WIP Monitoring and Bottleneck Detection</span></div><div class="content"><h2>3. Tools and who does what</h2>
+<div class="twocol"><div>
+<h3>Tools</h3>
+<table class="tight"><tr><th>Tool</th><th>Why</th></tr><tr><td>Laptop (Windows) with 2 free USB ports</td><td>flash boards, run broker + dashboard</td></tr><tr><td>Phone hotspot (2.4 GHz)</td><td>private Wi-Fi for NodeMCU + laptop</td></tr><tr><td>Hot-glue gun + sticks</td><td>mounts, chute, gate arm</td></tr><tr><td>Cutter, steel ruler, cutting mat, pencil</td><td>foam board</td></tr><tr><td>Small flat screwdriver</td><td>FC-51 trim pots, servo horn screw</td></tr><tr><td>Multimeter (borrow from lab)</td><td>check 5 V, continuity, adapter polarity</td></tr><tr><td>Packing tape, double-sided tape, masking tape</td><td>chute floor, fixing, labels</td></tr><tr><td>Marker + masking-tape labels</td><td>label every wire end</td></tr><tr><td>Stopwatch (phone)</td><td>cross-check cycle times</td></tr></table>
+<h3>About the 5 V 2 A adapter</h3>
+<p>If it ends in a round barrel plug, either buy a <b>DC female barrel jack with screw terminals</b> (about ₹20 at any SP Road shop) or cut the plug off and strip the two wires. <b>Find + and - with the multimeter before connecting</b> (DC volts: red probe on the wire that reads +5 V). Mark + with red tape.</p>
+<div class="warn"><b>Careful</b> Do not guess adapter polarity. Reversed 5 V into the servo or the capacitor can destroy them.</div>
+</div><div>
+<h3>Who does what (from the Phase 2 work split)</h3>
+<table class="tight"><tr><th>Person</th><th>Owns</th><th>Pages</th></tr><tr><td>Rishith</td><td>chute, servo gate, done bin, tests, backup video</td><td>Build 2, Calibration, Self-test</td></tr><tr><td>Syed</td><td>station platforms, sensor mounts, LED panel, slides</td><td>Build 1, Build 3</td></tr><tr><td>Prem</td><td>wiring, dashboard on the laptop</td><td>Wire 1-5, Software 2</td></tr><tr><td>Rohan</td><td>Arduino code, integration, demo lead</td><td>Software 1, Power-on, Demo script</td></tr></table>
+<p>Change the owners if you like, but keep one owner per block so nobody waits on "someone".</p>
+<div class="eli5"><b>ELI5</b> A pit crew changes four tyres in seconds because each person has one tyre. Four people on one tyre would be slower.</div>
+<h3>Label everything</h3>
+<p>Put a masking-tape flag on <b>both ends</b> of every wire: "S1 IN", "S1 OUT", "S2 IN", ..., "SERVO SIG", "GW TX", "GW RX". At 9 pm the night before, an unlabelled wire costs 20 minutes.</p>
+</div></div></div>
+<div class="gloss"><div class="gt">GLOSSARY FOR THIS PAGE</div><div><b>Hotspot:</b> Phone Wi-Fi network. Must be 2.4 GHz for the ESP8266.</div><div><b>Multimeter:</b> Meter for voltage, resistance and continuity (beep test).</div><div><b>Polarity:</b> Which side is + and which is -. Wrong polarity can damage parts.</div><div><b>Continuity test:</b> Multimeter mode that beeps when two points are connected.</div></div>
+<div class="foot"><span>IEM IDEA Lab EL · Phase 2 · manual v2 · 24 Nov 2026</span><span>page 4 of 21</span></div></section>
+<section class="page"><div class="hdr"><span><b>OptiProductio</b> · assembly and setup manual</span><span>Arduino-Based Real-Time WIP Monitoring and Bottleneck Detection</span></div><div class="content"><h2>4. Build 1: base board and layout</h2>
+
+<svg viewBox="0 0 1240 520" class="layout" xmlns="http://www.w3.org/2000/svg" font-family="Arial">
+ <rect x="20" y="40" width="1200" height="450" fill="#fff" stroke="#0f172a" stroke-width="3"/>
+ <text x="620" y="28" text-anchor="middle" font-size="18" font-weight="700">Base board 120 x 45 cm (top view, 1 px = 1 mm)</text>
+ <!-- back strip -->
+ <rect x="20" y="40" width="1200" height="90" fill="#f1f5f9"/>
+ <text x="1210" y="62" text-anchor="end" font-size="14" fill="#475569">BACK STRIP 9 cm: LED panel standing up, sensors behind the lane</text>
+ <!-- lane -->
+ <rect x="20" y="130" width="1200" height="160" fill="#fefce8"/>
+ <line x1="20" y1="150" x2="1220" y2="150" stroke="#2563eb" stroke-width="4"/>
+ <line x1="350" y1="270" x2="1220" y2="270" stroke="#2563eb" stroke-width="4"/>
+ <text x="1210" y="145" text-anchor="end" font-size="13" fill="#2563eb">back guide rail</text>
+ <text x="1210" y="290" text-anchor="end" font-size="13" fill="#2563eb">front guide rail (12 cm lane)</text>
+ <!-- chute -->
+ <rect x="20" y="160" width="300" height="100" fill="#e2e8f0" stroke="#334155" stroke-width="2"/>
+ <text x="170" y="205" text-anchor="middle" font-size="16" font-weight="700">CHUTE 30 x 10 cm</text>
+ <text x="170" y="228" text-anchor="middle" font-size="13">high end on the left, 8-10 cm rise</text>
+ <rect x="322" y="150" width="14" height="120" fill="#facc15" stroke="#854d0e"/>
+ <text x="329" y="320" text-anchor="middle" font-size="13" font-weight="700">GATE</text>
+ <rect x="300" y="88" width="40" height="40" fill="#3b82f6"/><text x="320" y="82" text-anchor="middle" font-size="12">servo</text>
+ <!-- stations -->
+ <g font-size="15" font-weight="700" text-anchor="middle">
+  <rect x="380" y="145" width="130" height="130" fill="#cffafe" stroke="#0e7490" stroke-width="2"/><text x="445" y="215">S1</text>
+  <rect x="630" y="145" width="130" height="130" fill="#fef3c7" stroke="#b45309" stroke-width="2"/><text x="695" y="215">S2</text>
+  <rect x="880" y="145" width="130" height="130" fill="#dcfce7" stroke="#15803d" stroke-width="2"/><text x="945" y="215">S3</text>
+  <rect x="1060" y="145" width="140" height="130" fill="#fed7aa" stroke="#9a3412" stroke-width="2"/><text x="1130" y="215">DONE BIN</text>
+ </g>
+ <g font-size="12" text-anchor="middle" fill="#334155">
+  <text x="445" y="240">13 x 13 cm</text><text x="695" y="240">13 x 13 cm</text><text x="945" y="240">13 x 13 cm</text>
+ </g>
+ <!-- buffers -->
+ <rect x="520" y="300" width="100" height="90" fill="none" stroke="#7c3aed" stroke-dasharray="6 5" stroke-width="2"/>
+ <text x="570" y="340" text-anchor="middle" font-size="12" fill="#7c3aed">QUEUE</text><text x="570" y="356" text-anchor="middle" font-size="12" fill="#7c3aed">before S2</text>
+ <rect x="770" y="300" width="100" height="90" fill="none" stroke="#7c3aed" stroke-dasharray="6 5" stroke-width="2"/>
+ <text x="820" y="340" text-anchor="middle" font-size="12" fill="#7c3aed">QUEUE</text><text x="820" y="356" text-anchor="middle" font-size="12" fill="#7c3aed">before S3</text>
+ <!-- sensors (on back rail, pointing to the front) -->
+ <g fill="#1d4ed8">
+  <rect x="368" y="112" width="22" height="30"/><rect x="512" y="112" width="22" height="30"/>
+  <rect x="618" y="112" width="22" height="30"/><rect x="762" y="112" width="22" height="30"/>
+  <rect x="868" y="112" width="22" height="30"/><rect x="1012" y="112" width="22" height="30"/>
+ </g>
+ <g font-size="11" text-anchor="middle" fill="#1d4ed8" font-weight="700">
+  <text x="379" y="106">IN D2</text><text x="523" y="106">OUT D3</text><text x="629" y="106">IN D4</text>
+  <text x="773" y="106">OUT D5</text><text x="879" y="106">IN D6</text><text x="1023" y="106">OUT D7</text>
+ </g>
+ <g stroke="#ef4444" stroke-width="2" stroke-dasharray="4 3" opacity=".8">
+  <line x1="379" y1="142" x2="379" y2="270"/><line x1="523" y1="142" x2="523" y2="270"/><line x1="629" y1="142" x2="629" y2="270"/>
+  <line x1="773" y1="142" x2="773" y2="270"/><line x1="879" y1="142" x2="879" y2="270"/><line x1="1023" y1="142" x2="1023" y2="270"/>
+ </g>
+ <!-- LEDs -->
+ <g><circle cx="430" cy="70" r="9" fill="#22c55e"/><circle cx="460" cy="70" r="9" fill="#ef4444"/>
+ <circle cx="680" cy="70" r="9" fill="#22c55e"/><circle cx="710" cy="70" r="9" fill="#ef4444"/>
+ <circle cx="930" cy="70" r="9" fill="#22c55e"/><circle cx="960" cy="70" r="9" fill="#ef4444"/></g>
+ <!-- front strip electronics -->
+ <rect x="20" y="400" width="1200" height="90" fill="#f8fafc"/>
+ <rect x="470" y="415" width="110" height="65" fill="#0891b2"/><text x="525" y="453" text-anchor="middle" font-size="14" fill="#fff" font-weight="700">UNO</text>
+ <rect x="600" y="415" width="170" height="65" fill="#e5e7eb" stroke="#64748b"/><text x="685" y="453" text-anchor="middle" font-size="13" font-weight="700">breadboard 400</text>
+ <rect x="790" y="420" width="90" height="55" fill="#0e7490"/><text x="835" y="452" text-anchor="middle" font-size="12" fill="#fff" font-weight="700">NodeMCU</text>
+ <rect x="320" y="420" width="120" height="55" fill="#fff7ed" stroke="#c2410c"/><text x="380" y="445" text-anchor="middle" font-size="11">servo 5 V 2 A</text><text x="380" y="461" text-anchor="middle" font-size="11">+ 470 uF</text>
+ <text x="1210" y="470" text-anchor="end" font-size="14" fill="#475569">FRONT STRIP 11 cm: electronics, buzzer, laptop USB</text>
+ <!-- dims -->
+ <g font-size="12" fill="#0f172a">
+  <text x="30" y="510">0</text><text x="315" y="510">30 cm</text><text x="370" y="510">36</text><text x="620" y="510">61</text><text x="870" y="510">86</text><text x="1050" y="510">104</text><text x="1190" y="510">120</text>
+ </g>
+</svg>
+
+<div class="twocol"><div>
+<ol class="steps" start="1"><li>Tape 3 foam boards edge to edge (both sides, packing tape) into a 120 x 45 cm base. Put it on a flat table.</li><li>Draw two lines along the length: <b>back strip</b> 9 cm from the back edge, <b>front strip</b> 11 cm from the front edge. The 25 cm between them is the working area.</li><li>Mark the chute at the left end (0-30 cm), then the gate at 32 cm.</li><li>Mark the 13 x 13 cm platforms: <b>S1 at 36-49 cm, S2 at 61-74 cm, S3 at 86-99 cm</b>, done bin 104-118 cm. The 12 cm gaps are the transfer zones.</li><li>Glue foam strips (1.5 cm high) as <b>guide rails</b> so the lane is 12 cm wide (boxes are about 6 cm). Boxes always slide along the lane from left to right.</li><li>Mark two dashed <b>QUEUE</b> squares on the front side of the lane, before S2 and before S3. Waiting boxes sit there, then get slid into the lane.</li></ol>
+</div><div>
+<div class="eli5"><b>ELI5</b> The lane is a railway track. Boxes may only travel along it, left to right, because the sensors are like ticket gates at each station's entry and exit. A box lifted over a gate does not get counted.</div>
+<h3>Why these spacings</h3>
+<ul>
+<li>13 cm platforms fit one 6 cm box with room for hands.</li>
+<li>Each platform has an IN sensor at its left edge and an OUT sensor at its right edge, so a box on the platform is <i>between</i> the two sensors.</li>
+<li>12 cm gaps keep one station's OUT sensor from seeing the next station's box.</li>
+<li>The 3D model shows a battery pack for the servo: we use the 5 V 2 A adapter instead.</li>
+</ul>
+<div class="stopcheck"><b>CHECK before moving on</b> Base is flat and stiff; platform and sensor positions are marked; a box slides freely along the full lane.</div>
+</div></div></div>
+<div class="gloss"><div class="gt">GLOSSARY FOR THIS PAGE</div><div><b>S1/S2/S3:</b> Station 1, Station 2, Station 3.</div><div><b>WIP:</b> Work in progress: boxes that have entered the line (passed S1 IN) but not yet left it (passed S3 OUT).</div><div><b>Cycle time:</b> Time a station spends on one box, from its IN sensor to its OUT sensor.</div></div>
+<div class="foot"><span>IEM IDEA Lab EL · Phase 2 · manual v2 · 24 Nov 2026</span><span>page 5 of 21</span></div></section>
+<section class="page"><div class="hdr"><span><b>OptiProductio</b> · assembly and setup manual</span><span>Arduino-Based Real-Time WIP Monitoring and Bottleneck Detection</span></div><div class="content"><h2>5. Build 2: chute and servo gate</h2>
+<img src="img/chute.jpg" class="half right">
+<h3>Chute</h3>
+<ol class="steps" start="1"><li>Cut a foam strip 30 x 10 cm (floor) and two side walls 30 x 4 cm. Glue the walls on, inner width about 7.5 cm (box + 1.5 cm).</li><li>Cover the floor with <b>packing tape</b>, shiny side up. Cardboard on bare foam board sticks; on tape it slides.</li><li>Make a riser for the high (left) end. Start at <b>8 cm</b>. A 3-4 cm rise (about 7°) is usually too shallow for cardboard.</li><li>Test with one box at a time: put it at the top and let go. It must slide all the way down <b>10 out of 10</b> times. If it stops, raise the riser 1 cm and retest. If it hits too hard and bounces, lower it or add a foam bumper.</li><li>Glue the low end so the box leaves the chute level with the lane, straight into S1.</li></ol>
+<h3>Servo gate</h3>
+<ol class="steps" start="6"><li>Glue a foam block (about 5 x 4 x 6 cm) beside the chute exit. Hot-glue the SG90 on top with its shaft pointing across the chute.</li><li><b>Do not fix the arm yet.</b> First the servo must be at its 'closed' angle: that is done in Calibration (section 14) with the test sketch.</li><li>Then push the single-arm horn on, and hot-glue a popsicle stick to the horn so it hangs <b>down across the chute exit</b> (closed). When the servo turns, the stick swings up and one box slides out.</li><li>Glue a small foam stop on the far side for the arm to rest against, so 8 boxes pushing on it cannot force it open.</li></ol>
+<div class="clear"></div>
+<div class="eli5"><b>ELI5</b> The gate is a nightclub bouncer with a clicker. While the club (the line) has fewer people (WIP) than the limit, the bouncer lets one person in. When it is full, nobody new gets in until someone leaves through the exit (S3 OUT).</div>
+<div class="stopcheck"><b>CHECK before moving on</b> Chute: 10/10 boxes slide all the way. Gate: servo glued firmly, arm NOT yet attached (it is set in Calibration).</div>
+</div>
+<div class="gloss"><div class="gt">GLOSSARY FOR THIS PAGE</div><div><b>CONWIP:</b> Constant WIP: a control rule that lets a new box in only while WIP is below a fixed limit.</div><div><b>Escapement:</b> A gate that lets exactly one item through each time it opens.</div><div><b>WIP:</b> Work in progress: boxes that have entered the line (passed S1 IN) but not yet left it (passed S3 OUT).</div></div>
+<div class="foot"><span>IEM IDEA Lab EL · Phase 2 · manual v2 · 24 Nov 2026</span><span>page 6 of 21</span></div></section>
+<section class="page"><div class="hdr"><span><b>OptiProductio</b> · assembly and setup manual</span><span>Arduino-Based Real-Time WIP Monitoring and Bottleneck Detection</span></div><div class="content"><h2>6. Build 3: stations, sensor mounts, LED panel, done bin</h2>
+<div class="twocol"><div>
+<h3>Platforms</h3>
+<p>Glue a coloured 13 x 13 cm foam square at S1, S2, S3 (or just outline them with tape). Write S1, S2, S3 big on them.</p>
+<h3>Sensor mounts (6)</h3>
+<ol class="steps" start="1"><li>For each sensor cut a small foam block (3 x 3 x 4 cm). Glue it on the <b>back</b> side of the lane, just behind the back rail.</li><li>Positions: S1 IN at 36 cm, S1 OUT at 50 cm, S2 IN at 61 cm, S2 OUT at 75 cm, S3 IN at 86 cm, S3 OUT at 100 cm (the dashed red lines in the layout).</li><li>Fix each FC-51 to its block with double-sided tape or a dab of glue <b>on the PCB edge only</b>, the two LEDs (IR emitter and receiver) pointing straight across the lane at box mid-height (about 3 cm up).</li><li>Cut a notch in the back rail in front of each sensor so the beam is not blocked. Keep the trim pot reachable with a screwdriver.</li><li>Write the name on each sensor (S1 IN ...) with marker on tape.</li></ol>
+<div class="warn"><b>Careful</b> Glue never touches the black and clear LEDs or the trim pot. Keep sensors out of direct sunlight; sunlight contains IR and blinds them. A short tube of black paper around the pair helps near windows.</div>
+</div><div>
+<h3>LED panel</h3>
+<ol class="steps" start="6"><li>Cut a foam strip 100 x 8 cm and stand it up along the back edge (glue + a foam triangle behind).</li><li>For each station, push a green and a red LED through the panel above that station (green left, red right). Write S1, S2, S3 under them.</li><li>Bend the legs behind the panel: <b>long leg (+)</b> on top, short leg (-) below, so you can tell them apart when wiring.</li><li>Fix the buzzer on the front strip near the UNO, so the team hears it.</li></ol>
+<h3>Done bin</h3>
+<p>A small open box (14 x 13 cm) at the right end. Finished boxes are carried back to the chute by hand.</p>
+<div class="eli5"><b>ELI5</b> Each station has two ticket gates: IN and OUT. The time between a box passing IN and passing OUT is how long the station worked on it (cycle time). With only one gate per station we could not tell working from waiting.</div>
+<div class="stopcheck"><b>CHECK before moving on</b> 6 sensors mounted at the marked spots, all pointing across the lane, all labelled. LEDs pushed through the panel with + legs on top.</div>
+</div></div></div>
+<div class="gloss"><div class="gt">GLOSSARY FOR THIS PAGE</div><div><b>Cycle time:</b> Time a station spends on one box, from its IN sensor to its OUT sensor.</div><div><b>Andon:</b> A status light or sound that shows a station&#x27;s state at a glance.</div><div><b>Potentiometer (trim pot):</b> A small screw-adjusted resistor; on the FC-51 it sets the detection distance.</div><div><b>S1/S2/S3:</b> Station 1, Station 2, Station 3.</div></div>
+<div class="foot"><span>IEM IDEA Lab EL · Phase 2 · manual v2 · 24 Nov 2026</span><span>page 7 of 21</span></div></section>
+<section class="page"><div class="hdr"><span><b>OptiProductio</b> · assembly and setup manual</span><span>Arduino-Based Real-Time WIP Monitoring and Bottleneck Detection</span></div><div class="content"><h2>7. Wire 1: breadboard, power and the UNO</h2>
+<div class="twocol"><div>
+<p>Place the UNO and the 400-point breadboard in the middle of the front strip (fix with double-sided tape). 20 cm jumpers are too short for the ends of the table: join one male-female and one male-male jumper (about 40 cm) where needed.</p>
+<h3>The 400-point breadboard</h3>
+<p>Each long edge has two rails: <b>red (+)</b> and <b>blue (-)</b>. In the middle, each short row of 5 holes is joined; the two halves are separate.</p>
+<ol class="steps" start="1"><li>UNO <b>5V</b> → breadboard <b>red rail</b> (top edge).</li><li>UNO <b>GND</b> → breadboard <b>blue rail</b> (top edge).</li><li>Join the top and bottom blue rails with a short jumper, and the top and bottom red rails with another, so both edges have power.</li><li>This red rail powers only the sensors and nothing else. The servo gets its own supply later.</li></ol>
+<div class="stopcheck"><b>CHECK before moving on</b> Plug the UNO USB into the laptop. Multimeter on DC volts between red and blue rails: <b>4.7 to 5.1 V</b>. The UNO's ON LED is lit. Unplug again.</div>
+</div><div>
+<table class="tight"><tr><th>UNO pin</th><th>Goes to</th></tr><tr><td>5V</td><td>breadboard + (red) rail</td></tr><tr><td>GND</td><td>breadboard - (blue) rail</td></tr><tr><td>D2 / D3</td><td>S1 IN / S1 OUT sensor</td></tr><tr><td>D4 / D5</td><td>S2 IN / S2 OUT sensor</td></tr><tr><td>D6 / D7</td><td>S3 IN / S3 OUT sensor</td></tr><tr><td>D8</td><td>servo signal (orange)</td></tr><tr><td>D9 / D10</td><td>S1 green / red LED (220 Ω)</td></tr><tr><td>D11 / D12</td><td>S2 green / red LED (220 Ω)</td></tr><tr><td>D13</td><td>S3 green LED (1 kΩ)</td></tr><tr><td>A0</td><td>S3 red LED (220 Ω)</td></tr><tr><td>A1</td><td>buzzer +</td></tr><tr><td>A2</td><td>NodeMCU D6 (direct)</td></tr><tr><td>A3</td><td>1 kΩ → NodeMCU D5 (+2.2 kΩ to GND)</td></tr><tr><td>A4, A5</td><td>free</td></tr></table>
+<div class="eli5"><b>ELI5</b> The breadboard rails are a power strip: plug the UNO's 5 V and GND into it once, and every sensor plugs into the strip instead of fighting for the UNO's single 5V pin.</div>
+</div></div></div>
+<div class="gloss"><div class="gt">GLOSSARY FOR THIS PAGE</div><div><b>Rail (breadboard):</b> The long red (+) and blue (-) strips along a breadboard&#x27;s edges, used to share power and ground.</div><div><b>Common GND:</b> All grounds wired together so every board measures voltage from the same zero.</div><div><b>Multimeter:</b> Meter for voltage, resistance and continuity (beep test).</div></div>
+<div class="foot"><span>IEM IDEA Lab EL · Phase 2 · manual v2 · 24 Nov 2026</span><span>page 8 of 21</span></div></section>
+<section class="page"><div class="hdr"><span><b>OptiProductio</b> · assembly and setup manual</span><span>Arduino-Based Real-Time WIP Monitoring and Bottleneck Detection</span></div><div class="content"><h2>8. Wire 2: the six IR sensors</h2>
+<div class="twocol"><div>
+<p>Each FC-51 has 3 pins: <b>VCC, GND, OUT</b> (read the print on the board; some boards order them differently).</p>
+<ol class="steps" start="1"><li>Use male-female jumpers (female end on the sensor). Use the same colours every time: red = VCC, black = GND, a signal colour for OUT.</li><li>VCC → breadboard red rail. GND → breadboard blue rail.</li><li>OUT → the UNO pin from the table. Do one sensor, then test it (step 5), then the next.</li><li>Route the wires along the back strip and under the lane in a neat bundle; tape them down every 15 cm so a hand cannot pull them out.</li><li><b>Test each sensor as you go</b>: plug in the USB, flash the hardware test sketch (Software 1, section 13) and type <code>s</code>. Wave a box in front of the new sensor: its column goes 0 → 1. If it is always 1, turn its trim pot anticlockwise; if never 1, clockwise.</li></ol>
+<table class="tight"><tr><th>Sensor</th><th>UNO pin</th><th>Position</th></tr><tr><td>S1 IN</td><td>D2</td><td>36 cm</td></tr><tr><td>S1 OUT</td><td>D3</td><td>50 cm</td></tr><tr><td>S2 IN</td><td>D4</td><td>61 cm</td></tr><tr><td>S2 OUT</td><td>D5</td><td>75 cm</td></tr><tr><td>S3 IN</td><td>D6</td><td>86 cm</td></tr><tr><td>S3 OUT</td><td>D7</td><td>100 cm</td></tr></table>
+</div><div>
+<div class="eli5"><b>ELI5</b> The FC-51 is a tiny torch plus a tiny eye. The torch shines invisible infrared light; when a box is close, light bounces back into the eye and the OUT pin drops to LOW (0 V). The little green LED on the module lights when it sees something, which makes tuning easy.</div>
+<h3>How the UNO counts</h3>
+<p>The program only counts the moment a sensor <b>changes</b> from 'nothing' to 'box' (an edge), and only if the signal stays steady for 25 ms. After a count, that sensor ignores itself for 0.4 s. So one box = one count, even if the sensor flickers at the box's edge.</p>
+<div class="warn"><b>Careful</b> Plug the sensor in with power off. VCC and GND swapped will make the module hot within seconds: unplug at once.</div>
+<div class="stopcheck"><b>CHECK before moving on</b> With the test sketch: each of the 6 columns shows 1 only when a box passes its own sensor, and 0 the rest of the time.</div>
+</div></div></div>
+<div class="gloss"><div class="gt">GLOSSARY FOR THIS PAGE</div><div><b>Debounce:</b> Ignoring the very short flickers of a sensor so one box is counted once.</div><div><b>Potentiometer (trim pot):</b> A small screw-adjusted resistor; on the FC-51 it sets the detection distance.</div><div><b>Sketch:</b> An Arduino program (.ino file).</div><div><b>Flash (verb):</b> Upload a program (sketch) to a board.</div></div>
+<div class="foot"><span>IEM IDEA Lab EL · Phase 2 · manual v2 · 24 Nov 2026</span><span>page 9 of 21</span></div></section>
+<section class="page"><div class="hdr"><span><b>OptiProductio</b> · assembly and setup manual</span><span>Arduino-Based Real-Time WIP Monitoring and Bottleneck Detection</span></div><div class="content"><h2>9. Wire 3: LEDs and buzzer</h2>
+<div class="twocol"><div>
+<p>Each LED needs a resistor in series, or it burns out (and can damage the UNO pin).</p>
+<ol class="steps" start="1"><li>Put each resistor in the breadboard's middle area, across two different 5-hole rows.</li><li>UNO pin → one end of the resistor (jumper into the same 5-hole row).</li><li>Other end of the resistor → LED <b>long leg (+)</b>, using a male-female jumper (or solder-free: twist and tape).</li><li>LED <b>short leg (-)</b> → breadboard blue (GND) rail.</li><li>Buzzer: <b>+</b> (longer leg or marked +) → UNO A1. <b>-</b> → blue rail.</li></ol>
+<table class="tight"><tr><th>LED</th><th>UNO pin</th><th>Resistor</th></tr><tr><td>S1 green</td><td>D9</td><td>220 Ω</td></tr><tr><td>S1 red</td><td>D10</td><td>220 Ω</td></tr><tr><td>S2 green</td><td>D11</td><td>220 Ω</td></tr><tr><td>S2 red</td><td>D12</td><td>220 Ω</td></tr><tr><td>S3 green</td><td>D13</td><td>1 kΩ (only 5 × 220 Ω bought)</td></tr><tr><td>S3 red</td><td>A0</td><td>220 Ω</td></tr></table>
+<p class="small">S3 green on 1 kΩ is a little dimmer. That is fine. D13 also has the UNO's on-board LED, so that one blinks along with S3 green.</p>
+</div><div>
+<h3>What the lights mean (andon)</h3>
+<table class="tight"><tr><th>Light</th><th>Meaning</th></tr><tr><td>green steady</td><td>station empty (S1: the gate may open)</td></tr><tr><td>green blinking</td><td>box on the station, WIP within the buffer time</td></tr><tr><td>red steady</td><td>box on the station longer than the buffer time: bottleneck</td></tr><tr><td>1 short beep</td><td>a station just turned red</td></tr><tr><td>2 short beeps</td><td>WIP hit the limit, gate holds the next box (CONWIP mode only)</td></tr><tr><td>3 long beeps</td><td>a station busy for 2 × buffer time: stalled (breakdown alarm)</td></tr></table>
+<div class="eli5"><b>ELI5</b> The resistor is a narrow pipe in front of a garden hose (the LED): without it the water (current) blasts out and bursts the hose. 220 Ω lets about 13 mA through, which is bright but safe.</div>
+<div class="stopcheck"><b>CHECK before moving on</b> Test sketch, type <code>l</code>: the LEDs light one at a time in the order S1 green, S1 red, S2 green, S2 red, S3 green, S3 red. Type <code>b</code>: two beeps. If an LED stays dark, turn it round (legs swapped).</div>
+</div></div></div>
+<div class="gloss"><div class="gt">GLOSSARY FOR THIS PAGE</div><div><b>Andon:</b> A status light or sound that shows a station&#x27;s state at a glance.</div><div><b>Buffer time:</b> User-set time (seconds) a station may stay busy before its LED turns red and it is flagged as the bottleneck. Set with B,n; saved in EEPROM.</div><div><b>Bottleneck:</b> The station that limits how fast the whole line can produce.</div><div><b>Polarity:</b> Which side is + and which is -. Wrong polarity can damage parts.</div></div>
+<div class="foot"><span>IEM IDEA Lab EL · Phase 2 · manual v2 · 24 Nov 2026</span><span>page 10 of 21</span></div></section>
+<section class="page"><div class="hdr"><span><b>OptiProductio</b> · assembly and setup manual</span><span>Arduino-Based Real-Time WIP Monitoring and Bottleneck Detection</span></div><div class="content"><h2>10. Wire 4: the servo and its own 5 V supply</h2>
+<div class="twocol"><div>
+<p>The SG90 has 3 wires: <b>orange = signal, red = +5 V, brown = GND</b>.</p>
+<ol class="steps" start="1"><li>Use the other (bottom) pair of breadboard rails as a separate <b>servo power rail</b>. First remove the jumper you added in Wire 1 between the top and bottom <b>red</b> rails. Keep the <b>blue</b> rails joined (common GND).</li><li>Adapter <b>+</b> → bottom red rail. Adapter <b>-</b> → bottom blue rail (which is joined to the UNO GND).</li><li>Push the 470 µF capacitor into the bottom rails: <b>long leg into red (+)</b>, striped leg into blue (-).</li><li>Servo red → bottom red rail. Servo brown → blue rail. Servo orange → UNO D8.</li><li>Double-check: the UNO 5V pin and the adapter + are <b>not</b> connected anywhere.</li></ol>
+<div class="warn"><b>Careful</b> If the top and bottom red rails are still joined, the adapter's 5 V and the laptop USB's 5 V get tied together. Remove that jumper.</div>
+</div><div>
+<h3>Why a separate supply</h3>
+<p>When the SG90 starts moving it briefly draws several hundred mA. From the UNO's 5V pin that spike makes the voltage dip and the UNO <b>resets in the middle of the demo</b> (a brown-out). The 2 A adapter has plenty of current, and the capacitor covers the first instant of each spike.</p>
+<div class="eli5"><b>ELI5</b> The capacitor is a small water tank right next to the tap. When the servo suddenly drinks a lot, it drinks from the tank first, so the pressure for everyone else does not drop.</div>
+<p>The program also only sends position pulses for 0.45 s after each move, then lets the servo rest. That stops buzzing and jitter. Gear friction holds the arm in place.</p>
+<div class="stopcheck"><b>CHECK before moving on</b> Plug in the adapter and the UNO USB. Test sketch, type <code>g</code>: the servo moves CLOSED → OPEN three times and the UNO does <b>not</b> reset (the test menu does not reprint by itself). Unplug both.</div>
+</div></div></div>
+<div class="gloss"><div class="gt">GLOSSARY FOR THIS PAGE</div><div><b>Brown-out:</b> A short voltage dip that makes a board reset.</div><div><b>Electrolytic capacitor:</b> A capacitor with + and - legs; the stripe marks the - leg. Here 470 uF stores charge for the servo.</div><div><b>Common GND:</b> All grounds wired together so every board measures voltage from the same zero.</div><div><b>Rail (breadboard):</b> The long red (+) and blue (-) strips along a breadboard&#x27;s edges, used to share power and ground.</div></div>
+<div class="foot"><span>IEM IDEA Lab EL · Phase 2 · manual v2 · 24 Nov 2026</span><span>page 11 of 21</span></div></section>
+<section class="page"><div class="hdr"><span><b>OptiProductio</b> · assembly and setup manual</span><span>Arduino-Based Real-Time WIP Monitoring and Bottleneck Detection</span></div><div class="content"><h2>11. Wire 5: the NodeMCU link</h2>
+<div class="twocol"><div>
+<p>The NodeMCU sits on the front strip next to the breadboard and gets its own power from its micro-USB cable (laptop or a power bank). It is <b>not</b> plugged into the breadboard (it is too wide for a 400-point board); use male-female jumpers to its pins.</p>
+<ol class="steps" start="1"><li>Divider: put the <b>1 kΩ</b> across two rows of the breadboard (row A and row B). Put the <b>2.2 kΩ</b> from row B to the blue (GND) rail.</li><li>UNO <b>A3</b> → row A (the 1 kΩ's free end).</li><li>Row B (the point between the two resistors) → NodeMCU <b>D5</b>.</li><li>NodeMCU <b>D6</b> → UNO <b>A2</b> (direct wire, no resistor).</li><li>NodeMCU <b>GND</b> → breadboard blue rail.</li><li>Do <b>not</b> connect the NodeMCU's 3V3 or Vin to anything.</li></ol>
+<div class="mono">UNO A3 ──[1 kΩ]──●── NodeMCU D5<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[2.2 kΩ]<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;GND</div>
+</div><div>
+<h3>Why the divider</h3>
+<p>The UNO speaks at 5 V; the ESP8266 chip on the NodeMCU is a 3.3 V chip. The divider turns 5 V into 5 × 2.2 / (1 + 2.2) ≈ <b>3.4 V</b>, which the ESP8266 reads as HIGH safely. The other direction needs nothing: the UNO reads 3.3 V as HIGH.</p>
+<div class="eli5"><b>ELI5</b> Two resistors share the 5 V like two friends sharing a pizza in proportion to their size: 1 slice for the 1 kΩ, 2.2 slices for the 2.2 kΩ. The NodeMCU only eats the 2.2 kΩ's share, about 3.4 V.</div>
+<h3>Why A2/A3 and not the UNO's TX/RX pins</h3>
+<p>The UNO's real serial pins (D0/D1) are used by the USB cable to the laptop (our backup path). So the sketch makes a second serial port in software on A2/A3 at 19200 baud.</p>
+<div class="stopcheck"><b>CHECK before moving on</b> Multimeter: with the UNO powered, measure between NodeMCU D5 and GND while the UNO is idle: about 3.3-3.4 V (serial lines rest HIGH). Never more than 3.6 V. The link test itself comes in Software 2.</div>
+</div></div></div>
+<div class="gloss"><div class="gt">GLOSSARY FOR THIS PAGE</div><div><b>Voltage divider:</b> Two resistors in series that output a fixed fraction of the input voltage.</div><div><b>SoftwareSerial:</b> A serial port made in software on ordinary pins, because the UNO has only one hardware port (used by USB).</div><div><b>Baud:</b> Serial speed in bits per second (19200 between UNO and NodeMCU).</div><div><b>Common GND:</b> All grounds wired together so every board measures voltage from the same zero.</div></div>
+<div class="foot"><span>IEM IDEA Lab EL · Phase 2 · manual v2 · 24 Nov 2026</span><span>page 12 of 21</span></div></section>
+<section class="page"><div class="hdr"><span><b>OptiProductio</b> · assembly and setup manual</span><span>Arduino-Based Real-Time WIP Monitoring and Bottleneck Detection</span></div><div class="content"><h2>12. Full wiring diagram</h2>
+<img src="img/wiring_rot.jpg" class="rot">
+<p class="small">Turn the page a quarter turn clockwise to read it. Zoomable version: <code>docs/phase2/wiring_diagram.svg</code>. The short-leg wires from the LEDs to GND are not drawn, to keep it readable. The servo supply shares only GND with the rest.</p>
+</div>
+<div class="gloss"><div class="gt">GLOSSARY FOR THIS PAGE</div><div><b>Rail (breadboard):</b> The long red (+) and blue (-) strips along a breadboard&#x27;s edges, used to share power and ground.</div><div><b>Voltage divider:</b> Two resistors in series that output a fixed fraction of the input voltage.</div><div><b>Common GND:</b> All grounds wired together so every board measures voltage from the same zero.</div></div>
+<div class="foot"><span>IEM IDEA Lab EL · Phase 2 · manual v2 · 24 Nov 2026</span><span>page 13 of 21</span></div></section>
+<section class="page"><div class="hdr"><span><b>OptiProductio</b> · assembly and setup manual</span><span>Arduino-Based Real-Time WIP Monitoring and Bottleneck Detection</span></div><div class="content"><h2>13. Software 1: Arduino IDE, drivers and flashing</h2>
+<div class="twocol"><div>
+<h3>Install once</h3>
+<ol class="steps" start="1"><li>Install <b>Arduino IDE 2.x</b> from arduino.cc.</li><li>Plug in the UNO. If no new COM port appears (Tools > Port, or Device Manager > Ports), install the <b>CH340 driver</b> (the clone UNO uses this USB chip) and replug.</li><li>File > Preferences > <i>Additional boards manager URLs</i>: <code>https://arduino.esp8266.com/stable/package_esp8266com_index.json</code>. Then Tools > Board > Boards Manager: install <b>esp8266 by ESP8266 Community</b>.</li><li>Plug in the NodeMCU. If no COM port appears, install the <b>Silicon Labs CP210x driver</b>.</li><li>Sketch > Include Library > Manage Libraries: install <b>PubSubClient</b> by Nick O'Leary. (Servo, SoftwareSerial and EEPROM are built in.)</li></ol>
+<h3>Flash the hardware test sketch to the UNO</h3>
+<ol class="steps" start="6"><li>Open <code>firmware/uno_hardware_test/uno_hardware_test.ino</code>.</li><li>Tools > Board: <b>Arduino Uno</b>. Tools > Port: the UNO's COM port.</li><li>Click Upload (→). Wait for 'Done uploading'.</li><li>Open Serial Monitor (magnifier icon), set <b>115200 baud</b> and <b>Newline</b>. The menu appears.</li></ol>
+</div><div>
+<table class="tight"><tr><th>Type</th><th>Test</th></tr><tr><td>s</td><td>live view of the 6 sensors (any key stops)</td></tr><tr><td>l</td><td>LEDs one by one</td></tr><tr><td>g</td><td>gate servo CLOSED/OPEN x3</td></tr><tr><td>b</td><td>buzzer</td></tr><tr><td>w</td><td>NodeMCU link (after Software 2)</td></tr><tr><td>a</td><td>LEDs + gate + buzzer</td></tr></table>
+<h3>Flash the real program (after calibration)</h3>
+<p>Open <code>firmware/uno_line_controller/uno_line_controller.ino</code>, same board and port, Upload. On start the LEDs flash and the buzzer chirps once.</p>
+<h3>Upload fails?</h3>
+<ul>
+<li>"Port busy / access denied": close the Serial Monitor and any <code>run.py --source usb</code>.</li>
+<li>"not in sync": wrong board or port selected, or a bad USB cable (some cables are charge-only).</li>
+<li>Upload to the UNO with A2/A3 wired is fine; nothing is on D0/D1.</li>
+</ul>
+<div class="eli5"><b>ELI5</b> Flashing is copying a recipe into the cook's memory. The UNO keeps the last recipe even when unplugged, so you only flash again when the recipe changes.</div>
+<div class="stopcheck"><b>CHECK before moving on</b> Test sketch menu shows in the Serial Monitor at 115200 baud.</div>
+</div></div></div>
+<div class="gloss"><div class="gt">GLOSSARY FOR THIS PAGE</div><div><b>Flash (verb):</b> Upload a program (sketch) to a board.</div><div><b>Sketch:</b> An Arduino program (.ino file).</div><div><b>COM port:</b> The name Windows gives a USB serial device, e.g. COM5.</div><div><b>Baud:</b> Serial speed in bits per second (19200 between UNO and NodeMCU).</div></div>
+<div class="foot"><span>IEM IDEA Lab EL · Phase 2 · manual v2 · 24 Nov 2026</span><span>page 14 of 21</span></div></section>
+<section class="page"><div class="hdr"><span><b>OptiProductio</b> · assembly and setup manual</span><span>Arduino-Based Real-Time WIP Monitoring and Bottleneck Detection</span></div><div class="content"><h2>14. Calibration: sensors, gate angles, chute</h2>
+<div class="twocol"><div>
+<h3>A. IR sensors (trim pots)</h3>
+<ol class="steps" start="1"><li>Test sketch, type <code>s</code>.</li><li>Put a box in the lane exactly where it passes the sensor. Turn the trim pot slowly until the module's green LED <b>just</b> turns on, then a little further (about 1/8 turn).</li><li>Take the box away: the LED must go off and the column read 0. If it stays on, the sensor is seeing the far rail: turn back a little, or put black tape on the front rail opposite the sensor.</li><li>Slide a box through at normal speed 5 times: the column must flick to 1 every time.</li><li>Repeat for all 6. Check again with the room lights you will have on demo day.</li></ol>
+<h3>B. Gate angles</h3>
+<ol class="steps" start="6"><li>Type <code>g</code>. Watch which way the shaft turns. The sketch uses <b>10°</b> for closed and <b>95°</b> for open.</li><li>With the servo resting at the closed position (end of the test), push the horn on and glue the popsicle arm so it hangs down across the chute exit.</li><li>Type <code>g</code> again. If the arm does not fully block or open, change <code>GATE_CLOSED_DEG</code> / <code>GATE_OPEN_DEG</code> at the top of <b>both</b> sketches (test and line controller), re-upload, repeat.</li><li>Load 8 boxes behind the closed arm: none may slip past.</li></ol>
+</div><div>
+<h3>C. Chute + gate together</h3>
+<p>Type <code>g</code> with boxes loaded: each opening must release the front box onto S1. (In the real program the gate closes as soon as S1 IN sees the box, so only one box goes.)</p>
+<h3>D. Timing settings (only if needed)</h3>
+<p><b>Buffer time</b> needs no re-upload: Serial Monitor (115200, Newline), type <code>B,15</code> for 15 s (<code>H</code> shows the settings), or use the dashboard. Saved in EEPROM.</p>
+<table class="tight small"><tr><th>Setting (top of uno_line_controller.ino)</th><th>Default</th><th>Change if</th></tr><tr><td>IR_HOLDOFF_MS</td><td>400</td><td>a box is counted twice: raise to 600</td></tr><tr><td>GATE_REOPEN_MS</td><td>1000</td><td>S1 empty this long before the gate reopens; raise if boxes bump at S1</td></tr><tr><td>DEFAULT_BUFFER_S</td><td>10</td><td>first-boot buffer time (later B,n, saved in EEPROM)</td></tr><tr><td>DEFAULT_WIP_LIMIT</td><td>0</td><td>0 = S1 gate only; n = CONWIP limit (later L,n)</td></tr></table>
+<div class="eli5"><b>ELI5</b> Tuning a sensor is like adjusting a motion-sensor light in a corridor: sensitive enough to see someone walking past, but not so sensitive that it sees the wall opposite.</div>
+<div class="stopcheck"><b>CHECK before moving on</b> All 6 sensors: 5/5 passes counted, 0 false counts with the lane empty. Gate holds 8 boxes and releases exactly the front one.</div>
+</div></div></div>
+<div class="gloss"><div class="gt">GLOSSARY FOR THIS PAGE</div><div><b>Potentiometer (trim pot):</b> A small screw-adjusted resistor; on the FC-51 it sets the detection distance.</div><div><b>Escapement:</b> A gate that lets exactly one item through each time it opens.</div><div><b>EEPROM:</b> Memory on the UNO that keeps data (the WIP limit) when power is off.</div><div><b>Debounce:</b> Ignoring the very short flickers of a sensor so one box is counted once.</div></div>
+<div class="foot"><span>IEM IDEA Lab EL · Phase 2 · manual v2 · 24 Nov 2026</span><span>page 15 of 21</span></div></section>
+<section class="page"><div class="hdr"><span><b>OptiProductio</b> · assembly and setup manual</span><span>Arduino-Based Real-Time WIP Monitoring and Bottleneck Detection</span></div><div class="content"><h2>15. Software 2: laptop, Mosquitto, hotspot and gateway</h2>
+<div class="twocol"><div>
+<h3>A. Python (once)</h3>
+<ol class="steps" start="1"><li>Install Python 3.11+ from python.org; tick <b>Add python.exe to PATH</b>.</li><li>Command Prompt: <code>cd ...\OptiProductio\code\laptop</code></li><li><code>py -m venv .venv</code> then <code>.venv\Scripts\activate</code></li><li><code>pip install -r requirements.txt</code></li><li>Check: <code>python -m pytest -q</code> → <b>10 passed</b>. Try <code>python run.py --source sim</code>: the dashboard opens with a simulated line.</li></ol>
+<h3>B. Mosquitto (MQTT broker)</h3>
+<ol class="steps" start="6"><li>Install from mosquitto.org/download (Windows 64-bit).</li><li>As administrator: <code>net stop mosquitto</code> (the installed service only listens to the laptop itself).</li><li>As administrator: <code>netsh advfirewall firewall add rule name="Mosquitto 1883" dir=in action=allow protocol=TCP localport=1883</code></li><li>Start it with our config and leave the window open:<br><code>"C:\Program Files\mosquitto\mosquitto.exe" -c code\laptop\mosquitto\mosquitto.conf -v</code></li></ol>
+</div><div>
+<h3>C. Hotspot and gateway</h3>
+<ol class="steps" start="10"><li>Phone hotspot on <b>2.4 GHz</b> (Android: AP band 2.4 GHz; iPhone: Maximise Compatibility). Connect the laptop to it; if Windows asks, choose <b>Private</b> network.</li><li><code>ipconfig</code> → note the Wi-Fi <b>IPv4 Address</b>, e.g. 192.168.43.25.</li><li>Edit <code>firmware/nodemcu_gateway/config.h</code>: WIFI_SSID, WIFI_PASSWORD, MQTT_HOST = that IP.</li><li>Arduino IDE: Board <b>NodeMCU 1.0 (ESP-12E Module)</b>, the NodeMCU's port, Upload.</li><li>Serial Monitor 115200: <b>Wi-Fi OK</b> then <b>MQTT connected</b>. Blue on-board LED solid = connected (slow blink = Wi-Fi only, fast blink = no Wi-Fi).</li><li>Link test: UNO running the test sketch, type <code>w</code>: lines <code># gw ok wifi=1 mqtt=1</code> come back.</li></ol>
+<div class="eli5"><b>ELI5</b> Mosquitto is a post office on the laptop. The NodeMCU drops letters into labelled boxes like rvce/idealab/line1/s2/event; our Python program has a subscription to all of line1's boxes. The dashboard sends 'change the WIP limit' letters back the same way.</div>
+<div class="stopcheck"><b>CHECK before moving on</b> pytest 10 passed; Mosquitto window shows 'Opening ipv4 listen socket on port 1883'; NodeMCU says MQTT connected; <code>w</code> test returns 'gw ok'.</div>
+</div></div></div>
+<div class="gloss"><div class="gt">GLOSSARY FOR THIS PAGE</div><div><b>MQTT:</b> A light publish/subscribe message protocol used in IIoT.</div><div><b>Broker:</b> The MQTT &#x27;post office&#x27; (Mosquitto) that passes messages between devices.</div><div><b>Hotspot:</b> Phone Wi-Fi network. Must be 2.4 GHz for the ESP8266.</div><div><b>IP address:</b> A device&#x27;s number on the network, e.g. 192.168.43.25.</div><div><b>Simulator:</b> Software that pretends to be the UNO and the line, for practice without hardware.</div></div>
+<div class="foot"><span>IEM IDEA Lab EL · Phase 2 · manual v2 · 24 Nov 2026</span><span>page 16 of 21</span></div></section>
+<section class="page"><div class="hdr"><span><b>OptiProductio</b> · assembly and setup manual</span><span>Arduino-Based Real-Time WIP Monitoring and Bottleneck Detection</span></div><div class="content"><h2>16. First power-on and the self-test</h2>
+<div class="twocol"><div>
+<h3>Start-up order (every time)</h3>
+<ol class="steps" start="1"><li>Phone hotspot on. Laptop on the hotspot.</li><li>Mosquitto window started (section 15, B4).</li><li><code>.venv\Scripts\activate</code> then <code>python run.py --source mqtt</code>. Browser opens <code>http://localhost:5000</code>.</li><li>Plug in the servo adapter, then the NodeMCU USB, then the UNO USB (UNO running <b>uno_line_controller</b>).</li><li>UNO lamp test: all LEDs flash, buzzer chirps. Gate opens once; all stations green steady.</li><li>Dashboard top right: <b>MQTT · live</b> and <b>NodeMCU online</b>.</li></ol>
+<h3>Backup path (no Wi-Fi)</h3>
+<p>Stop run.py (Ctrl+C), close any Serial Monitor, then <code>python run.py --source usb --port COM5</code> (your UNO port; <code>python -m serial.tools.list_ports</code> lists them). Takes 30 seconds.</p>
+<div class="eli5"><b>ELI5</b> Like a cricket match with TV and radio: if the TV feed (Wi-Fi) drops, switch to the radio (USB cable). The match (the UNO running the gate) never stops.</div>
+</div><div>
+<h3>Self-test sheet (do before every rehearsal and the demo)</h3>
+<table class="tight small"><tr><th>✓</th><th>Test</th><th>Pass</th></tr><tr><td>☐</td><td>One box end to end</td><td>event log: S1 IN, S1 OUT, S2 IN, S2 OUT, S3 IN, S3 OUT; Done = 1</td></tr><tr><td>☐</td><td>Cycle time</td><td>OUT event cycle time close to a phone stopwatch (± 0.5 s)</td></tr><tr><td>☐</td><td>20 boxes</td><td>Done count on dashboard = hand count</td></tr><tr><td>☐</td><td>Gate sequence</td><td>box reaches S1 → gate closes; S1 empty → gate reopens ~1 s later</td></tr><tr><td>☐</td><td>Buffer time</td><td>B,5: S1 green blinks 5 s with a box, then red steady + 1 beep</td></tr><tr><td>☐</td><td>WIP limit 3</td><td>gate never lets a 4th box in; 2 beeps; amber banner</td></tr><tr><td>☐</td><td>Limit from dashboard</td><td>Apply L = 2 → LIMIT in the event log within 1 s</td></tr><tr><td>☐</td><td>Settings kept</td><td>UNO reset button → BOOT/BUF show the same limit and buffer</td></tr><tr><td>☐</td><td>Stall</td><td>box held on S2 for 2 × buffer → stays red, 3 beeps, Line DOWN</td></tr><tr><td>☐</td><td>Wi-Fi loss</td><td>hotspot off 20 s: line still runs; dashboard warns; resumes</td></tr><tr><td>☐</td><td>USB backup</td><td>--source usb shows the same data</td></tr><tr><td>☐</td><td>Lost lines</td><td>no (or very few) 'lines lost' in 5 min</td></tr><tr><td>☐</td><td>Little's law</td><td>Run report: TH x LT close to WIP avg (within ~15 %)</td></tr></table>
+<div class="stopcheck"><b>CHECK before moving on</b> Every box ticked twice on Wednesday. If one fails, Troubleshooting (section 19).</div>
+</div></div></div>
+<div class="gloss"><div class="gt">GLOSSARY FOR THIS PAGE</div><div><b>Little&#x27;s law:</b> WIP = throughput x lead time. Used to cross-check the measurements.</div><div><b>Andon:</b> A status light or sound that shows a station&#x27;s state at a glance.</div><div><b>Downtime:</b> Time the line produced nothing for longer than the &#x27;line down&#x27; threshold.</div><div><b>Last Will:</b> An MQTT message the broker sends for a device that disconnects without saying goodbye (&#x27;offline&#x27;).</div></div>
+<div class="foot"><span>IEM IDEA Lab EL · Phase 2 · manual v2 · 24 Nov 2026</span><span>page 17 of 21</span></div></section>
+<section class="page"><div class="hdr"><span><b>OptiProductio</b> · assembly and setup manual</span><span>Arduino-Based Real-Time WIP Monitoring and Bottleneck Detection</span></div><div class="content"><h2>17. Using the dashboard</h2>
+<img src="img/dashboard.jpg" class="dash">
+<div class="twocol"><div>
+<ul class="tightlist">
+<li><b>Top tiles</b> (scoreboard, idea from Vorne XL): good parts vs target, OEE with A/E/QR, throughput, WIP now / limit and gate state, bottleneck now, lead time with the Little's law check.</li>
+<li><b>Line view</b>: each station's lights copy the real LEDs; numbers between stations = boxes waiting.</li>
+<li><b>Buffer time and gate control</b>: set the buffer time (5 to 60 s presets) and press <b>Apply buffer</b>. Pick a WIP limit (Off = S1 gate only, 2, 3, 4, 6) and press <b>Apply limit</b>. A new run starts automatically. "Mark last part scrap" logs a reject. "Reset line counts" only after all boxes are back in the chute.</li>
+</ul>
+</div><div>
+<ul class="tightlist">
+<li><b>Timeline</b>: last 10 min of each station's active periods, orange = bottleneck, violet = shifting bottleneck, red = line down (hover for the reason), gate openings, WIP vs limit.</li>
+<li><b>Bottleneck analysis</b> (Roser), <b>Downtime Pareto</b>, <b>Output per minute</b>, <b>KPI table</b> with formulas (ISO 22400 names).</li>
+<li><b>Run report</b> (button top right): one row per run, for the A/B comparison; CSV download; print to PDF.</li>
+</ul>
+<div class="eli5"><b>ELI5</b> The dashboard is a cricket scorecard: the big numbers are the score, the timeline is the ball-by-ball, and the run report compares innings.</div>
+</div></div></div>
+<div class="gloss"><div class="gt">GLOSSARY FOR THIS PAGE</div><div><b>OEE:</b> Overall equipment effectiveness = availability x performance x quality.</div><div><b>Throughput:</b> Finished boxes per minute.</div><div><b>Lead time:</b> Time one box spends in the whole line, from S1 IN to S3 OUT.</div><div><b>Pareto chart:</b> Bar chart of causes sorted from biggest to smallest, with a running total line.</div><div><b>Active period:</b> A stretch of time when a station has a box on it (working or waiting to hand it on). Roser&#x27;s method: the station with the longest current active period is the bottleneck.</div><div><b>ISO 22400:</b> Standard that names manufacturing KPIs (availability, effectiveness, OEE...).</div></div>
+<div class="foot"><span>IEM IDEA Lab EL · Phase 2 · manual v2 · 24 Nov 2026</span><span>page 18 of 21</span></div></section>
+<section class="page"><div class="hdr"><span><b>OptiProductio</b> · assembly and setup manual</span><span>Arduino-Based Real-Time WIP Monitoring and Bottleneck Detection</span></div><div class="content"><h2>18. Demo-day script</h2>
+<div class="twocol"><div>
+<h3>Roles during the demo</h3>
+<table class="tight"><tr><th>Person</th><th>Does</th></tr><tr><td>Operator S1</td><td>takes each released box, 'works' 3-4 s, slides it past S1 OUT into the queue</td></tr><tr><td>Operator S2</td><td>the bottleneck station: 'works' 6-8 s per box</td></tr><tr><td>Operator S3</td><td>'works' 4 s, slides into the done bin, carries finished boxes back to the chute</td></tr><tr><td>Presenter</td><td>laptop + explaining; reads numbers off the dashboard</td></tr></table>
+<p>Operators always slide boxes along the lane past the sensors. Never lift a box over a sensor.</p>
+<h3>Arrive 45 min early</h3>
+<ul class="check"><li>Hotspot on, laptop joined, Mosquitto, run.py --source mqtt</li><li>Hardware power-on order (section 16)</li><li>Self-test: one box end to end + limit change</li><li>Reset line counts with all boxes in the chute</li><li>Backup video on the laptop desktop</li><li>Run report from Wednesday's A/B test open in a tab</li></ul>
+</div><div>
+<h3>The 8-minute run</h3>
+<table class="tight small"><tr><th>Time</th><th>Do</th><th>Say (precise words)</th></tr><tr><td>0:00</td><td>Show the table and the architecture</td><td>UNO is the line controller; the NodeMCU is an MQTT gateway; ISA-95 style topics; SQLite historian.</td></tr><tr><td>0:45</td><td>Limit <b>Off</b>, buffer 10 s; run 2 min</td><td>Gate lets one box onto S1 at a time. Green blinks = work in progress; the S2 operator takes ~12 s per box, so S2 turns red after the 10 s buffer time (set per product). S2 has the longest active periods: bottleneck (Roser).</td></tr><tr><td>3:00</td><td>Apply <b>L = 3</b>; run 3 min</td><td>Closed-loop CONWIP: the gate releases only while WIP < 3. The loop runs on the UNO, the laptop only sets the limit.</td></tr><tr><td>5:30</td><td>Hold a box on S2 for 2 × buffer (20 s)</td><td>Stall alarm; line DOWN; the Pareto attributes the loss to S2.</td></tr><tr><td>6:30</td><td>Open Run report</td><td>Compare throughput, average WIP and lead time; check Little's law.</td></tr><tr><td>7:30</td><td>Questions</td><td>Only quote numbers from our own runs.</td></tr></table>
+<div class="warn"><b>Careful</b> If Wi-Fi fails: switch to USB (30 s). If hardware fails: show the backup video. Show the simulator only as 'the simulator', never as the real line.</div>
+</div></div></div>
+<div class="gloss"><div class="gt">GLOSSARY FOR THIS PAGE</div><div><b>CONWIP:</b> Constant WIP: a control rule that lets a new box in only while WIP is below a fixed limit.</div><div><b>Bottleneck:</b> The station that limits how fast the whole line can produce.</div><div><b>Active period:</b> A stretch of time when a station has a box on it (working or waiting to hand it on). Roser&#x27;s method: the station with the longest current active period is the bottleneck.</div><div><b>A/B test:</b> Running the same line twice with one change (e.g. WIP limit off vs 3) and comparing the results.</div><div><b>ISA-95:</b> Standard that layers a factory into levels (machine, control, operations, business); our topic names follow its hierarchy.</div><div><b>Historian:</b> A database that stores every machine event with its time (here: SQLite).</div></div>
+<div class="foot"><span>IEM IDEA Lab EL · Phase 2 · manual v2 · 24 Nov 2026</span><span>page 19 of 21</span></div></section>
+<section class="page"><div class="hdr"><span><b>OptiProductio</b> · assembly and setup manual</span><span>Arduino-Based Real-Time WIP Monitoring and Bottleneck Detection</span></div><div class="content"><h2>19. Troubleshooting</h2><table class="tight small"><tr><th>Symptom</th><th>Likely cause</th><th>Fix</th></tr><tr><td>UNO resets when the gate moves</td><td>servo on UNO 5V, GNDs not joined, capacitor missing</td><td>servo on adapter rail only; join blue rails; check capacitor polarity</td></tr><tr><td>Sensor always 1</td><td>range too long / sees the far rail / sunlight</td><td>trim pot anticlockwise; black tape on far rail; shade the sensor</td></tr><tr><td>Sensor never 1</td><td>range too short, wrong pin, VCC/GND swapped</td><td>trim pot clockwise; check the pin table; check wiring</td></tr><tr><td>Box counted twice</td><td>sensor flickers at the box edge</td><td>tune pot; raise IR_HOLDOFF_MS to 600</td></tr><tr><td>Event log shows ERR 'OUT without IN'</td><td>that station's IN sensor missed the box</td><td>re-aim / re-tune the IN sensor; operator slid the box past IN?</td></tr><tr><td>WIP stuck high, gate never opens</td><td>missed counts</td><td>all boxes back to the chute, press Reset line counts</td></tr><tr><td>Gate lets 2 boxes through</td><td>gate too slow / boxes too close</td><td>raise GATE_REOPEN_MS; check S1 IN sees the box quickly</td></tr><tr><td>Boxes stop in the chute</td><td>too shallow, sticky floor</td><td>raise riser 1 cm; fresh packing tape</td></tr><tr><td>Servo buzzes / jitters</td><td>pulses not stopping</td><td>check SERVO_MOVE_MS (450); adapter gives 5 V</td></tr><tr><td>An LED never lights</td><td>LED backwards / no resistor contact</td><td>turn the LED round; reseat the resistor</td></tr><tr><td>Upload fails 'access denied'</td><td>port in use</td><td>close Serial Monitor and run.py --source usb</td></tr><tr><td>No COM port</td><td>driver / charge-only cable</td><td>CH340 (UNO) or CP210x (NodeMCU) driver; another cable</td></tr><tr><td>NodeMCU fast blink</td><td>no Wi-Fi</td><td>hotspot 2.4 GHz? SSID/password in config.h right?</td></tr><tr><td>NodeMCU 'MQTT failed, state -2'</td><td>cannot reach the laptop</td><td>MQTT_HOST = laptop's hotspot IP; firewall rule; Mosquitto started with our config</td></tr><tr><td>Dashboard 'no data for N s'</td><td>source down</td><td>USB plugged? NodeMCU LED solid? Mosquitto window open?</td></tr><tr><td>Dashboard 'lines lost' climbing</td><td>UNO-NodeMCU link noisy</td><td>check divider values, short wires, common GND</td></tr><tr><td>Dashboard page will not open</td><td>run.py not running / wrong address</td><td>start run.py; use http://localhost:5000</td></tr><tr><td>Phones cannot open the dashboard</td><td>firewall</td><td>allow Python on Private networks when Windows asks; use http://laptop-IP:5000</td></tr><tr><td>pytest fails</td><td>packages not installed / wrong folder</td><td>activate .venv; run from code\laptop; pip install -r requirements.txt</td></tr></table><div class="eli5"><b>ELI5</b> Debug like a doctor: find the symptom in the left column, check the most likely cause first, and change one thing at a time.</div></div>
+<div class="gloss"><div class="gt">GLOSSARY FOR THIS PAGE</div><div><b>COM port:</b> The name Windows gives a USB serial device, e.g. COM5.</div><div><b>Debounce:</b> Ignoring the very short flickers of a sensor so one box is counted once.</div><div><b>Common GND:</b> All grounds wired together so every board measures voltage from the same zero.</div><div><b>Brown-out:</b> A short voltage dip that makes a board reset.</div><div><b>Hotspot:</b> Phone Wi-Fi network. Must be 2.4 GHz for the ESP8266.</div><div><b>IP address:</b> A device&#x27;s number on the network, e.g. 192.168.43.25.</div></div>
+<div class="foot"><span>IEM IDEA Lab EL · Phase 2 · manual v2 · 24 Nov 2026</span><span>page 20 of 21</span></div></section>
+<section class="page"><div class="hdr"><span><b>OptiProductio</b> · assembly and setup manual</span><span>Arduino-Based Real-Time WIP Monitoring and Bottleneck Detection</span></div><div class="content"><h2>20. Quick reference card (print and tape to the table)</h2>
+<div class="twocol"><div>
+<table class="tight"><tr><th>UNO pin</th><th>Connection</th></tr><tr><td>5V / GND</td><td>top rails (sensors only)</td></tr><tr><td>D2 D3</td><td>S1 IN, S1 OUT</td></tr><tr><td>D4 D5</td><td>S2 IN, S2 OUT</td></tr><tr><td>D6 D7</td><td>S3 IN, S3 OUT</td></tr><tr><td>D8</td><td>servo orange</td></tr><tr><td>D9 D10</td><td>S1 green, red</td></tr><tr><td>D11 D12</td><td>S2 green, red</td></tr><tr><td>D13 A0</td><td>S3 green (1 kΩ), red</td></tr><tr><td>A1</td><td>buzzer +</td></tr><tr><td>A2</td><td>← NodeMCU D6</td></tr><tr><td>A3</td><td>→ 1 kΩ → NodeMCU D5 (2.2 kΩ to GND)</td></tr><tr><td>Adapter 5 V 2 A</td><td>bottom rails: servo red + 470 µF (+ long leg)</td></tr></table>
+<h3>Commands</h3>
+<div class="mono">python run.py --source sim<br>python run.py --source mqtt<br>python run.py --source usb --port COM5<br>python run.py --source sim --scenario breakdown --speed 4<br>python -m optiproductio.simulator --mqtt 127.0.0.1<br>python -m pytest -q</div>
+<p>Dashboard <b>http://localhost:5000</b> · Run report <b>/report</b></p>
+</div><div>
+<table class="tight small"><tr><th>Serial line (UNO → laptop)</th><th>Meaning</th></tr><tr><td>E,seq,ms,st,ev,val</td><td>one event (IN, OUT, GATE, HOLD, BN, STALL, LIMIT, BUF, BOOT, ERR)</td></tr><tr><td>S,seq,ms,wip,limit,gate,o1,o2,o3,bn,in,done,buf</td><td>status, every second</td></tr><tr><td>B,s / L,n / H / R / P</td><td>commands: buffer time, limit, help, reset, ping</td></tr></table>
+<table class="tight small"><tr><th>MQTT topic</th><th>Content</th></tr><tr><td>rvce/idealab/line1/s1..s3/event</td><td>station events (JSON)</td></tr><tr><td>rvce/idealab/line1/line/event</td><td>gate, hold, bottleneck, limit</td></tr><tr><td>rvce/idealab/line1/status</td><td>status (retained)</td></tr><tr><td>rvce/idealab/line1/cmd/wip_limit, cmd/buffer</td><td>laptop → UNO</td></tr><tr><td>rvce/idealab/line1/gateway/state</td><td>online / offline (Last Will)</td></tr></table>
+<table class="tight small"><tr><th>Light / sound</th><th>Meaning</th></tr><tr><td>green steady / blinking</td><td>empty / box within buffer</td></tr><tr><td>red steady</td><td>busy > buffer: bottleneck</td></tr><tr><td>3 beeps</td><td>stalled > 2 × buffer</td></tr><tr><td>2 beeps</td><td>WIP at limit, gate holding</td></tr></table>
+</div></div></div>
+<div class="gloss"><div class="gt">GLOSSARY FOR THIS PAGE</div><div><b>MQTT:</b> A light publish/subscribe message protocol used in IIoT.</div><div><b>Baud:</b> Serial speed in bits per second (19200 between UNO and NodeMCU).</div><div><b>Last Will:</b> An MQTT message the broker sends for a device that disconnects without saying goodbye (&#x27;offline&#x27;).</div><div><b>WIP:</b> Work in progress: boxes that have entered the line (passed S1 IN) but not yet left it (passed S3 OUT).</div><div><b>Andon:</b> A status light or sound that shows a station&#x27;s state at a glance.</div></div>
+<div class="foot"><span>IEM IDEA Lab EL · Phase 2 · manual v2 · 24 Nov 2026</span><span>page 21 of 21</span></div></section>
+</body></html>

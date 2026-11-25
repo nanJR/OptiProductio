@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OptiProductio Line Dashboard</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <div class="mark"></div>
+    <div>
+      <h1>Arduino-Based Real-Time WIP Monitoring and Bottleneck Detection</h1>
+      <p>OptiProductio · Line 1 · <span id="runLabel">waiting for data</span></p>
+    </div>
+  </div>
+  <div class="top-right">
+    <span class="pill"><span class="dot" id="srcDot"></span><span id="srcText">connecting</span></span>
+    <span class="pill" id="gwPill" title="NodeMCU gateway state"><span class="dot" id="gwDot"></span><span id="gwText">gateway</span></span>
+    <a class="btn small" href="/report" target="_blank">Run report</a>
+    <button class="btn small" id="themeBtn" title="Light / dark">Theme</button>
+  </div>
+</header>
+
+<main>
+  <div class="banner" id="banner">Waiting for the first line from the UNO. Start the simulator, plug in the USB cable, or check the gateway.</div>
+
+  <!-- Scoreboard (Vorne XL style) -->
+  <section class="tiles">
+    <div class="tile">
+      <div class="label">Good parts</div>
+      <div class="big num" id="tGood">0<small>/ 0 target</small></div>
+      <div class="sub" id="tGoodSub">efficiency -</div>
+    </div>
+    <div class="tile">
+      <div class="label">OEE</div>
+      <div class="big num" id="tOee">-</div>
+      <div class="bars3">
+        <div>A <span id="tA">-</span><i><b id="bA"></b></i></div>
+        <div>E <span id="tE">-</span><i><b id="bE"></b></i></div>
+        <div>QR <span id="tQ">-</span><i><b id="bQ"></b></i></div>
+      </div>
+    </div>
+    <div class="tile">
+      <div class="label">Throughput</div>
+      <div class="big num" id="tTh">-<small>pcs/min</small></div>
+      <div class="sub" id="tThSub">-</div>
+    </div>
+    <div class="tile">
+      <div class="label">WIP now / limit</div>
+      <div class="big num" id="tWip">-</div>
+      <div class="sub">Gate <span class="chip closed" id="tGate">-</span> <span id="tWipAvg"></span></div>
+    </div>
+    <div class="tile bn">
+      <div class="label">Bottleneck now</div>
+      <div class="big num" id="tBn">-</div>
+      <div class="sub" id="tBnSub">active-period method</div>
+    </div>
+    <div class="tile">
+      <div class="label">Lead time</div>
+      <div class="big num" id="tLt">-<small>s</small></div>
+      <div class="sub" id="tLtSub">Little's law check -</div>
+    </div>
+  </section>
+
+  <!-- Line view + CONWIP control -->
+  <section class="grid-2">
+    <div class="card">
+      <h2>Line view</h2>
+      <p class="hint">Live state of the chute gate, the 3 stations (S1 to S3) and the buffers between them. Lights copy the LEDs on the table.</p>
+      <div class="flow" id="flow">
+        <div class="chute">Chute<div class="gate"><span class="chip closed" id="fGate">gate</span></div></div>
+        <div class="arrow"></div>
+        <div class="station" id="st1"></div>
+        <div class="buffer"><span class="n num" id="buf1">0</span>waiting</div>
+        <div class="station" id="st2"></div>
+        <div class="buffer"><span class="n num" id="buf2">0</span>waiting</div>
+        <div class="station" id="st3"></div>
+        <div class="arrow"></div>
+        <div class="donebin">Done<span class="n num" id="doneN" style="display:block;font-size:22px;color:var(--text);font-weight:650">0</span></div>
+      </div>
+      <div class="legend">
+        <span><i style="background:var(--run)"></i>green steady: station empty</span>
+        <span><i style="background:var(--run);opacity:.45"></i>green blinking: box on station, WIP (work in progress) within buffer time</span>
+        <span><i style="background:var(--bn)"></i>red steady: box on station longer than the buffer time (bottleneck)</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Buffer time and gate control</h2>
+      <p class="hint">Buffer time: how long a station may stay busy before its LED turns red and it is called the bottleneck. Each station has its own buffer, because each does a different job (a longer job needs a longer buffer). Twice the buffer = suspected breakdown. The UNO saves all three in EEPROM.</p>
+      <div class="presets" id="bufStations"></div>
+      <div class="note" id="bufNow" style="margin:-6px 0 12px">Now: -</div>
+      <div class="limit-row">
+        <button class="btn stepper" id="bufMinus">-</button>
+        <div class="limit-val num" id="bufVal">10</div>
+        <button class="btn stepper" id="bufPlus">+</button>
+        <span class="unit">s</span>
+        <button class="btn primary" id="bufApply">Apply buffer</button>
+      </div>
+      <div class="presets" id="bufPresets"></div>
+      <div class="note" id="bufNote">Also settable in the Arduino Serial Monitor: B,15 = all stations 15 s, B,2,15 = only S2 15 s.</div>
+      <p class="hint" style="margin-top:14px">Gate: opens when S1 is empty (S1 green steady), closes as soon as a box reaches S1. WIP limit "Off" = only this rule. A limit n &gt; 0 switches on CONWIP (constant work in progress): the gate also waits until the line holds fewer than n boxes.</p>
+      <div class="limit-row">
+        <button class="btn stepper" id="limMinus">-</button>
+        <div class="limit-val num" id="limVal">4</div>
+        <button class="btn stepper" id="limPlus">+</button>
+        <button class="btn primary" id="limApply">Apply limit</button>
+      </div>
+      <div class="presets" id="presets"></div>
+      <div class="actions">
+        <button class="btn" id="newRun">Start new run</button>
+        <button class="btn" id="scrap">Mark last part scrap</button>
+        <button class="btn" id="pingBtn">Ping UNO</button>
+        <button class="btn danger" id="resetBtn">Reset line counts</button>
+      </div>
+      <div class="note" id="limNote">Changing the WIP limit starts a new run automatically, so the run report can compare gate modes (A/B test).</div>
+    </div>
+  </section>
+
+  <!-- Timeline (Vorne chronogram / Evocon timeline) -->
+  <section class="card">
+    <h2>Timeline</h2>
+    <p class="hint" id="tlHint">Last 10 minutes. Each station row is filled while a box is on it (active period). Orange marks the bottleneck at that moment, violet the shifting bottleneck.</p>
+    <svg id="timeline" height="250"></svg>
+    <div class="legend">
+      <span><i style="background:var(--run);opacity:.55"></i>active</span>
+      <span><i style="background:var(--bn)"></i>bottleneck</span>
+      <span><i style="background:var(--shift)"></i>shifting bottleneck</span>
+      <span><i style="background:var(--down)"></i>line down</span>
+      <span><i style="background:var(--accent)"></i>gate open</span>
+      <span><i style="background:var(--hold)"></i>WIP limit</span>
+    </div>
+  </section>
+
+  <section class="grid-3">
+    <div class="card">
+      <h2>Bottleneck analysis</h2>
+      <p class="hint">Share of run time each station was the sole or shifting bottleneck (Roser active-period method).</p>
+      <svg id="roser" height="210"></svg>
+      <div class="legend"><span><i style="background:var(--bn)"></i>sole</span><span><i style="background:var(--shift)"></i>shifting</span></div>
+      <div class="note" id="roserNote"></div>
+    </div>
+    <div class="card">
+      <h2>Downtime Pareto</h2>
+      <p class="hint">Why the line stopped producing: no box out of S3 for longer than the down threshold.</p>
+      <svg id="pareto" height="210"></svg>
+      <div class="note" id="paretoNote"></div>
+    </div>
+    <div class="card">
+      <h2>Output per minute</h2>
+      <p class="hint">Boxes out of S3 each minute against the target from the planned cycle time.</p>
+      <svg id="minutes" height="210"></svg>
+      <div class="legend"><span><i style="background:var(--accent)"></i>actual</span><span><i style="background:var(--hold)"></i>target</span></div>
+    </div>
+  </section>
+
+  <section class="grid-2b">
+    <div class="card">
+      <h2>KPIs (ISO 22400-2 names)</h2>
+      <p class="hint">Every value with its formula. Names follow ISO 22400-2; formulas are the standard textbook forms.</p>
+      <table class="kpi" id="kpiTable"></table>
+      <h2 style="margin-top:18px">Flow (Little's law)</h2>
+      <table class="kpi" id="flowTable"></table>
+      <h2 style="margin-top:18px">Stations</h2>
+      <table class="kpi" id="stTable"></table>
+    </div>
+    <div class="card">
+      <h2>Event log</h2>
+      <p class="hint">Latest messages stored in the SQLite historian (UNO time in seconds).</p>
+      <div class="log" id="log"></div>
+      <h2 style="margin-top:18px">Settings</h2>
+      <form class="settings" id="settings">
+        <label>Planned cycle time PRI (s)<input name="ideal_ct_s" type="number" step="0.5" min="1"></label>
+        <label>Line down after (s)<input name="down_after_s" type="number" step="1" min="2"></label>
+        <label>Timeline window (s)<input name="timeline_s" type="number" step="60" min="60"></label>
+        <button class="btn" type="submit">Save settings</button>
+      </form>
+    </div>
+  </section>
+</main>
+<footer>OptiProductio · IEM IDEA Lab EL · dashboard served from the laptop, works offline</footer>
+<script src="/static/app.js"></script>
+</body>
+</html>
