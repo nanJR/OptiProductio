@@ -22,8 +22,8 @@ const uint8_t SERVO_PIN = 8;
 const uint8_t LED_PIN[6]  = {9, 10, 11, 12, 13, A0};
 const char* LED_NAME[6] = {"S1 green", "S1 red", "S2 green", "S2 red", "S3 green", "S3 red"};
 const uint8_t BUZZER_PIN = A1;
-const uint8_t GATE_CLOSED_DEG = 10;
-const uint8_t GATE_OPEN_DEG = 95;
+const uint8_t GATE_CLOSED_DEG = 95;  // arm hangs across the lane (keep same as line controller)
+const uint8_t GATE_OPEN_DEG = 10;    // smaller angle = arm swings RIGHT (looking down the lane)
 
 Servo gate;
 SoftwareSerial gw(A2, A3);

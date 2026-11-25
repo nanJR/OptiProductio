@@ -145,7 +145,7 @@ void readUno() {
 
 void setup() {
   Serial.begin(115200);
-  uno.begin(UNO_BAUD, SWSERIAL_8N1, D5, D6, false, 256);
+  uno.begin(UNO_BAUD, SWSERIAL_8N1, 14, 12, false, 256);  // 14 = D5 (RX), 12 = D6 (TX); numbers work on any ESP8266 board setting
   pinMode(LED_BUILTIN, OUTPUT);
   snprintf(clientId, sizeof(clientId), "optiproductio-gw-%06x", ESP.getChipId());
 
