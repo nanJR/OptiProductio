@@ -201,7 +201,7 @@ def _down_reason(a, b, periods, stall_ms):
     return f"Slow station S{s + 1}"
 
 
-def compute(events, init, session_start, t0, t1, cfg=None):
+def _compute(events, init, session_start, t0, t1, cfg=None):
     """Everything for one run: the window [t0, t1] (UNO ms) of a session."""
     c = dict(DEFAULT_CFG)
     c.update(cfg or {})
@@ -459,3 +459,26 @@ def compute(events, init, session_start, t0, t1, cfg=None):
         "pareto": pareto_rows, "minutes": minutes, "timeline": tl, "kpis": kpis, "flow": flow,
         "cfg": c,
     }
+
+
+# Scoreboard numbers that depend on the clock (target, OEE, throughput, average WIP...).
+# Boxes are moved by hand, so these are worked out at the moment a box last LEFT a
+# station (any OUT sensor), not every second: between box exits they stay still.
+# Live things (LEDs, bottleneck now, breakdown lock, line DOWN, timeline) still use "now".
+ON_EXIT_KEYS = ("target", "efficiency_pct", "wip_avg", "little_rhs", "th_per_min", "tr_per_min",
+                "availability", "effectiveness", "quality", "oee", "adot_s", "apt_s", "kpis", "flow")
+
+
+def compute(events, init, session_start, t0, t1, cfg=None):
+    """Everything for one run. Clock-based KPIs are frozen at the last box exit (see ON_EXIT_KEYS)."""
+    live = _compute(events, init, session_start, t0, t1, cfg)
+    if not (cfg or {}).get("kpi_on_exit", True):
+        return live
+    exits = [e["ms"] for e in events if e["ev"] == "OUT" and t0 < e["ms"] <= t1]
+    t_kpi = exits[-1] if exits else t0
+    live["kpi_at_s"] = (t_kpi - t0) / 1000
+    if t_kpi < t1:
+        frozen = _compute(events, init, session_start, t0, t_kpi, cfg)
+        for k in ON_EXIT_KEYS:
+            live[k] = frozen[k]
+    return live

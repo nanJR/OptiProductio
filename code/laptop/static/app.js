@@ -172,7 +172,7 @@ function render(s) {
 
   // scoreboard
   $("tGood").innerHTML = `${k.good}<small>/ ${Math.floor(k.target)} target</small>`;
-  $("tGoodSub").textContent = `efficiency ${k.efficiency_pct == null ? "-" : k.efficiency_pct + "%"} · ${k.breakdown_parts || 0} breakdown · ${k.scrap} scrap · run ${fmtDur(k.pbt_s)}`;
+  $("tGoodSub").textContent = `efficiency ${k.efficiency_pct == null ? "-" : k.efficiency_pct + "%"} · ${k.breakdown_parts || 0} breakdown · ${k.scrap} scrap · run ${fmtDur(k.pbt_s)} · updated at last box out (${fmtDur(k.kpi_at_s ?? k.pbt_s)})`;
   $("tOee").textContent = pct(k.oee);
   [["A", k.availability], ["E", k.effectiveness], ["Q", k.quality]].forEach(([n, v]) => {
     $("t" + n).textContent = pct(v); $("b" + n).style.width = (v == null ? 0 : v * 100) + "%";
