@@ -7,7 +7,7 @@ rem  Double-click this file. It lives in the "code" folder of the repo.
 rem
 rem  What it does for you:
 rem    - finds Python, makes a venv in %LOCALAPPDATA%\OptiProductio and installs the packages (first time only)
-rem    - checks the UNO sketch in this folder is v3.2 (per-station buffers)
+rem    - checks the UNO sketch in this folder is the latest (v3.3)
 rem    - Wi-Fi mode: starts Mosquitto with our config in its own window,
 rem      shows the laptop IP for config.h, then starts the dashboard
 rem    - USB mode: lists COM ports, remembers your choice, starts the dashboard
@@ -57,10 +57,10 @@ if errorlevel 1 (
 if not exist "%LAPTOP%\data" mkdir "%LAPTOP%\data"
 
 rem ---------- 2. Is the sketch in this folder the latest? ----------
-findstr /C:"line controller v3.2" "%CODE%firmware\uno_line_controller\uno_line_controller.ino" >nul 2>&1
+findstr /C:"line controller v3.3" "%CODE%firmware\uno_line_controller\uno_line_controller.ino" >nul 2>&1
 if errorlevel 1 (
   echo.
-  echo [!] The UNO sketch in this folder is NOT v3.2 ^(per-station buffers^).
+  echo [!] The UNO sketch in this folder is NOT v3.3 ^(latest^).
   echo     Download the repo ZIP again from GitHub ^(main branch^) before the demo.
   echo.
 )

@@ -171,8 +171,9 @@ function render(s) {
   }
 
   // scoreboard
-  $("tGood").innerHTML = `${k.good}<small>/ ${Math.floor(k.target)} target</small>`;
-  $("tGoodSub").textContent = `efficiency ${k.efficiency_pct == null ? "-" : k.efficiency_pct + "%"} · ${k.breakdown_parts || 0} breakdown · ${k.scrap} scrap · run ${fmtDur(k.pbt_s)} · updated at last box out (${fmtDur(k.kpi_at_s ?? k.pbt_s)})`;
+  // good parts out of S3 vs boxes the plan expected by the time the last box left S3
+  $("tGood").innerHTML = `${k.good}<small>/ ${Math.floor(k.target)} planned</small>`;
+  $("tGoodSub").textContent = `efficiency ${k.efficiency_pct == null ? "-" : k.efficiency_pct + "%"} · ${k.breakdown_parts || 0} breakdown · ${k.scrap} scrap · run ${fmtDur(k.pbt_s)} · both numbers change only when a box leaves S3`;
   $("tOee").textContent = pct(k.oee);
   [["A", k.availability], ["E", k.effectiveness], ["Q", k.quality]].forEach(([n, v]) => {
     $("t" + n).textContent = pct(v); $("b" + n).style.width = (v == null ? 0 : v * 100) + "%";
@@ -375,7 +376,7 @@ const EV_TEXT = {
   GATE: (e) => e.val ? "gate opened" : "gate closed", HOLD: (e) => `gate held: WIP ${e.val} at limit`,
   BN: (e) => e.val ? `bottleneck is now S${e.val} (over buffer time)` : "no station over the buffer time", LIMIT: (e) => `WIP limit set to ${e.val || "off (S1 gate only)"}`,
   BUF: (e) => `${e.st ? "S" + e.st : "all stations"} buffer time ${e.val} s`,
-  STALL: (e) => `stalled ${(e.val / 1000).toFixed(0)} s`, ERR: (e) => e.val === 1 ? "OUT without IN (check IN sensor)" : (e.val === 3 ? "S1 IN seen twice for one box, ignored" : "too many boxes (sensor noise?)"),
+  STALL: (e) => `stalled ${(e.val / 1000).toFixed(0)} s`, ERR: (e) => e.val === 1 ? "OUT without IN (check IN sensor)" : (e.val === 3 ? "S1 IN seen twice for one box, ignored" : (e.val === 4 ? "OUT with no box there (sensor noise), ignored" : "too many boxes (sensor noise?)")),
   LOCK: (e) => e.val ? `line locked: breakdown at ${[1, 2, 3].filter((n) => e.val & (1 << (n - 1))).map((n) => "S" + n).join(", ")}` : "breakdown cleared, line running",
   BOOT: (e) => `UNO started, limit ${e.val}`, RESET: () => "counters reset", PONG: () => "UNO answered ping", SCRAP: () => "operator marked scrap",
 };

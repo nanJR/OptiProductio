@@ -349,4 +349,26 @@ def test_clock_kpis_update_only_when_a_box_leaves_a_station():
     assert b["pbt_s"] == 60                                             # run clock still shown live
     ev2 = ev + [E(9000 + 55000, 1, "IN", 1), E(65000, 1, "OUT", 1000)]  # a box leaves S1 -> update
     c = analytics.compute(ev2, {"occ": [0, 0, 0]}, 0, 0, 70_000)
-    assert c["kpi_at_s"] == 65 and c["target"] > a["target"]
+    assert c["kpi_at_s"] == 65 and c["th_per_min"] != a["th_per_min"]
+    assert c["target"] == a["target"], "planned parts move only when a box leaves S3"
+
+
+def test_good_and_planned_change_only_when_a_box_leaves_s3():
+    def E(ms, st, ev, val):
+        return {"ms": ms, "st": st, "ev": ev, "val": val, "seq": 0}
+    init = {"occ": [0, 0, 0], "released": 0, "done": 0}
+    ev = [E(0, 0, "BUF", 10), E(1000, 1, "IN", 1), E(8000, 1, "OUT", 7000), E(9000, 2, "IN", 1), E(16000, 2, "OUT", 7000)]
+    k = analytics.compute(ev, init, 0, 0, 17_000)
+    assert k["good"] == 0 and k["target"] == 0, "planned number ran ahead before any box left S3"
+    ev += [E(17000, 3, "IN", 1), E(23000, 3, "OUT", 6000)]
+    k = analytics.compute(ev, init, 0, 0, 30_000)
+    assert k["good"] == 1 and abs(k["target"] - 23 / 6) < 1e-9
+
+
+def test_phantom_s3_out_is_not_a_good_part():
+    def E(ms, st, ev, val):
+        return {"ms": ms, "st": st, "ev": ev, "val": val, "seq": 0}
+    init = {"occ": [0, 0, 0], "released": 0, "done": 0}
+    ev = [E(1000, 1, "IN", 1), E(3000, 3, "OUT", 0)]          # S3 OUT while the only box is on S1
+    k = analytics.compute(ev, init, 0, 0, 5_000)
+    assert k["produced"] == 0 and k["good"] == 0

@@ -100,6 +100,15 @@ int main() {
   CHECK(st[0].over && !st[1].over, "after ~4.6 s: S1 (buffer 4 s) red, S2 (buffer 7 s) still blinking");
   run(2600);
   CHECK(st[1].over, "after ~7.2 s on S2: S2 red too");
+  // phantom OUT: S3 OUT fires while no box has left S2 -> ignored, not counted as done
+  Serial.feed("R"); run(1200);
+  pass(IR_IN_PIN[0]);
+  unsigned long doneBefore = done;
+  pass(IR_OUT_PIN[2]);
+  CHECK(done == doneBefore && has(",3,ERR,4"), "S3 OUT with no box out of S2 yet is ignored (ERR,4)");
+  pass(IR_OUT_PIN[0]); pass(IR_OUT_PIN[1]);   // S1 out; S2 IN missed but S2 OUT seen -> real box
+  pass(IR_OUT_PIN[2]);
+  CHECK(done == doneBefore + 1, "box that really came through S1, S2 counts at S3 OUT even with IN sensors missed");
   printf("\n%d failure(s)\nLast lines:\n", fails);
   for (auto &l : Serial.out) printf("  %s\n", l.c_str());
   return fails;

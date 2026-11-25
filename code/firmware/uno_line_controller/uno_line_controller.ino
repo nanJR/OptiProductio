@@ -41,6 +41,7 @@
     events: BOOT, IN, OUT, GATE, HOLD, LIMIT, BUF, BN, STALL, LOCK, ERR, RESET, PONG
     ERR values: 1 = OUT without IN, 2 = too many boxes on a station,
                 3 = second S1 IN while the box is still on S1 (sensor re-trigger, ignored)
+                4 = OUT at a station that could not hold a box (nothing came from upstream), ignored
   Commands the UNO accepts (from USB or from the gateway), one per line.
   In the Arduino IDE Serial Monitor: 115200 baud, line ending "Newline", then type e.g. B,15
     B,<s>       set the buffer time of ALL stations to s seconds (1..3600). Saved in EEPROM.
@@ -122,6 +123,7 @@ Station st[3];
 uint16_t seq = 0;
 unsigned long released = 0;       // boxes that entered S1 (released into the line)
 unsigned long done = 0;           // boxes that left S3 (finished)
+unsigned long outs[3] = {0, 0, 0}; // boxes that left each station (OUT sensor)
 uint8_t wipLimit = DEFAULT_WIP_LIMIT;  // 0 = no limit
 uint16_t bufferS[3] = {DEFAULT_BUFFER_S, DEFAULT_BUFFER_S, DEFAULT_BUFFER_S};  // per station, seconds
 
@@ -277,6 +279,14 @@ void onIn(uint8_t i) {
 void onOut(uint8_t i) {
   unsigned long now = millis();
   Station &s = st[i];
+  // A box cannot leave a station that never got one: station empty and no box left over
+  // from the station before it (S1: none released). Sensor noise: ignore, do not count.
+  unsigned long upstream = (i == 0) ? released : outs[i - 1];
+  if (s.count == 0 && upstream <= outs[i]) {
+    sendEvent(i + 1, "ERR", 4);
+    return;
+  }
+  outs[i]++;
   long cycleMs = 0;
   if (s.count == 0) {
     sendEvent(i + 1, "ERR", 1);         // OUT without IN: the IN sensor missed the box
@@ -452,6 +462,7 @@ void printHelp() {
 void resetLine() {
   released = 0;
   done = 0;
+  outs[0] = outs[1] = outs[2] = 0;
   for (uint8_t i = 0; i < 3; i++) {
     st[i].head = 0; st[i].count = 0; st[i].over = false; st[i].stallSent = false; st[i].frozen = false;
   }
@@ -537,7 +548,7 @@ void setup() {
   digitalWrite(BUZZER_PIN, LOW);
   delay(350);
 
-  Serial.println(F("# OptiProductio UNO line controller v3.2"));
+  Serial.println(F("# OptiProductio UNO line controller v3.3"));
   s1EmptySince = millis() - GATE_REOPEN_MS;
   sendEvent(0, "BOOT", wipLimit);
   sendBuffers();

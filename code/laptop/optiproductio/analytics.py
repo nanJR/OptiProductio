@@ -465,12 +465,35 @@ def _compute(events, init, session_start, t0, t1, cfg=None):
 # Boxes are moved by hand, so these are worked out at the moment a box last LEFT a
 # station (any OUT sensor), not every second: between box exits they stay still.
 # Live things (LEDs, bottleneck now, breakdown lock, line DOWN, timeline) still use "now".
-ON_EXIT_KEYS = ("target", "efficiency_pct", "wip_avg", "little_rhs", "th_per_min", "tr_per_min",
+ON_EXIT_KEYS = ("wip_avg", "little_rhs", "th_per_min", "tr_per_min",
                 "availability", "effectiveness", "quality", "oee", "adot_s", "apt_s", "kpis", "flow")
+
+
+def _drop_phantom_outs(events, init):
+    """A box cannot leave a station that never got one: an OUT at station s with that station
+    empty AND no box left over from the station before it (S1: no S1 IN) is sensor noise.
+    The UNO v3.3 already drops these (ERR,4); this also cleans data from older firmware."""
+    if init.get("released", 0) or init.get("done", 0) or any(init.get("occ", [0, 0, 0])):
+        return events                       # joined mid-run: counts unknown, keep everything
+    ins, outs, keep = [0, 0, 0], [0, 0, 0], []
+    for e in events:
+        s = e["st"] - 1
+        if e["ev"] in ("BOOT", "RESET"):
+            ins, outs = [0, 0, 0], [0, 0, 0]
+        elif e["ev"] == "IN" and 0 <= s <= 2:
+            ins[s] += 1
+        elif e["ev"] == "OUT" and 0 <= s <= 2:
+            upstream = ins[0] if s == 0 else outs[s - 1]
+            if ins[s] <= outs[s] and upstream <= outs[s]:
+                continue                    # phantom: nothing could have been there to leave
+            outs[s] += 1
+        keep.append(e)
+    return keep
 
 
 def compute(events, init, session_start, t0, t1, cfg=None):
     """Everything for one run. Clock-based KPIs are frozen at the last box exit (see ON_EXIT_KEYS)."""
+    events = _drop_phantom_outs(events, init)
     live = _compute(events, init, session_start, t0, t1, cfg)
     if not (cfg or {}).get("kpi_on_exit", True):
         return live
@@ -481,4 +504,12 @@ def compute(events, init, session_start, t0, t1, cfg=None):
         frozen = _compute(events, init, session_start, t0, t_kpi, cfg)
         for k in ON_EXIT_KEYS:
             live[k] = frozen[k]
+    # The Good parts tile pairs "good" with "planned by now". Both change only when a box
+    # leaves S3, so the planned number never runs ahead while a box is still on S1 or S2.
+    s3 = [e["ms"] for e in events if e["ev"] == "OUT" and e["st"] == 3 and t0 < e["ms"] <= t1]
+    t_s3 = s3[-1] if s3 else t0
+    ideal = float(live["cfg"]["ideal_ct_s"]) * 1000
+    live["target"] = (t_s3 - t0) / ideal if ideal > 0 else 0
+    live["efficiency_pct"] = round(100 * live["good"] / live["target"], 1) if live["target"] > 0 else None
+    live["target_at_s"] = (t_s3 - t0) / 1000
     return live
