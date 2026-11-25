@@ -88,6 +88,7 @@ The Pareto chart sorts reasons by lost seconds with a cumulative % line (the 80/
 | QR | Quality ratio | GQ / PQ |
 | OEE | OEE index (overall equipment effectiveness) | A × E × QR |
 | TR | Throughput rate | PQ / APT |
+**When the numbers update:** boxes are moved by hand, so the clock-based numbers (target, OEE with A/E/QR, throughput, average WIP, Little's law) are worked out at the moment a box last left any station (an OUT sensor), not every second. Between box exits they stay still; the run clock, LEDs, bottleneck, breakdown lock and line-DOWN banner stay live. Target = time up to the last box exit ÷ planned cycle time (PRI, 6 s by default, editable in Settings).
 **Good-part rule:** a box is good if it left every station before that station was declared broken (its cycle time at each station ≤ 2 × buffer time). A slow box that turned the LED red (over the buffer) is still good. The laptop follows each box through S1 → S2 → S3 in FIFO order to apply this.
 We cite ISO 22400-2 for the names and structure; the formulas are the standard textbook forms (we could not read the paywalled text word by word). Say exactly that if asked. TR uses APT where ISO uses order execution time.
 

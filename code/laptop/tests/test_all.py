@@ -334,3 +334,19 @@ def test_each_station_turns_red_on_its_own_buffer():
     # old firmware: one BUF on station 0 still means all stations
     k2 = analytics.compute([E(0, 0, "BUF", 5)] + ev[3:], {"occ": [0, 0, 0]}, 0, 0, 9_000)
     assert k2["cfg"]["buffers_s"] == [5.0, 5.0, 5.0]
+
+
+def test_clock_kpis_update_only_when_a_box_leaves_a_station():
+    def E(ms, st, ev, val):
+        return {"ms": ms, "st": st, "ev": ev, "val": val, "seq": 0}
+    ev = [E(0, 0, "BUF", 10), E(1000, 1, "IN", 1), E(7000, 1, "OUT", 6000), E(8000, 2, "IN", 1),
+          E(14000, 2, "OUT", 6000), E(15000, 3, "IN", 1), E(21000, 3, "OUT", 6000)]
+    a = analytics.compute(ev, {"occ": [0, 0, 0]}, 0, 0, 25_000)
+    b = analytics.compute(ev, {"occ": [0, 0, 0]}, 0, 0, 60_000)     # 35 s later, no box moved
+    for key in ("target", "oee", "th_per_min", "availability", "wip_avg"):
+        assert a[key] == b[key], key
+    assert a["kpi_at_s"] == 21 and abs(a["target"] - 21 / 6) < 1e-9
+    assert b["pbt_s"] == 60                                             # run clock still shown live
+    ev2 = ev + [E(9000 + 55000, 1, "IN", 1), E(65000, 1, "OUT", 1000)]  # a box leaves S1 -> update
+    c = analytics.compute(ev2, {"occ": [0, 0, 0]}, 0, 0, 70_000)
+    assert c["kpi_at_s"] == 65 and c["target"] > a["target"]
