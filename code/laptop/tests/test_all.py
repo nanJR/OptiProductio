@@ -289,3 +289,16 @@ def test_frozen_time_does_not_count_on_laptop():
     s1 = k["stations"][0]
     assert s1["frozen"] and abs(s1["active_now_s"] - 9) < 0.01 and not s1["stalled"]
     assert k["lock_now"] == 2 and k["stations"][1]["stalled"]
+
+
+def test_stall_event_marks_the_stuck_box_even_if_its_own_cycle_is_short():
+    """The UNO's STALL uses the station's active period. If two boxes queued on S2, the head box's own
+    cycle can be under 2 x buffer although S2 was declared broken. That box is still not good."""
+    def E(ms, st, ev, val):
+        return {"ms": ms, "st": st, "ev": ev, "val": val, "seq": 0}
+    ev = [E(0, 0, "BUF", 5),
+          E(1000, 2, "IN", 1), E(5000, 2, "IN", 2), E(6000, 2, "OUT", 5000),   # S2 active from 1 s
+          E(11500, 2, "STALL", 10500), E(14000, 2, "OUT", 9000),               # head box: 9 s < 10 s
+          E(15000, 3, "IN", 1), E(16000, 3, "OUT", 1000), E(17000, 3, "IN", 1), E(18000, 3, "OUT", 1000)]
+    k = analytics.compute(ev, {"occ": [0, 0, 0]}, 0, 0, 20_000)
+    assert k["produced"] == 2 and k["breakdown_parts"] == 1 and k["good"] == 1
